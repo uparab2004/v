@@ -97,7 +97,18 @@ export default function App() {
 
   const inputRef = useRef<TextInput>(null);
 
-  // ربط ملف manifest.json بالمتصفح تلقائياً
+  // 1. ربط ملف Service Worker لتفعيل التثبيت التلقائي (PWA)
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+  }, []);
+
+  // 2. ربط ملف manifest.json بالمتصفح تلقائياً
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
@@ -1001,7 +1012,7 @@ const styles = StyleSheet.create({
 
   itemTextColumn: {
     flex: 1,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'flex-end',
     paddingVertical: 12,
     paddingRight: 12,
@@ -1015,7 +1026,7 @@ const styles = StyleSheet.create({
 
   userColumn: {
     flex: 1,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'flex-start',
     paddingVertical: 12,
     paddingLeft: 12,
@@ -1029,7 +1040,7 @@ const styles = StyleSheet.create({
 
   quantityColumn: {
     width: 120,
-    justify: 'center',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 8,
   },
@@ -1049,7 +1060,7 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 6,
     alignItems: 'center',
-    justify: 'center',
+    justifyContent: 'center',
   },
   qtyBtnDisabled: {
     backgroundColor: '#cbd5e1',
