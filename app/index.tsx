@@ -91,13 +91,24 @@ export default function App() {
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
 
-  // حالات نافذة المشاركة
+  // حالات نافذة المشاركة والتثبيت
   const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   const inputRef = useRef<TextInput>(null);
 
-  // 1. ربط ملف Service Worker لتفعيل التثبيت التلقائي (PWA)
+  // 1. التقاط حدث طلب التثبيت التلقائي من المتصفح
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+      });
+    }
+  }, []);
+
+  // 2. ربط ملف Service Worker
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -108,7 +119,7 @@ export default function App() {
     }
   }, []);
 
-  // 2. ربط ملف manifest.json بالمتصفح تلقائياً
+  // 3. ربط ملف manifest.json بالمتصفح تلقائياً
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
@@ -183,6 +194,21 @@ export default function App() {
     };
     checkSavedSession();
   }, []);
+
+  // دالة تشغيل التثبيت عند الضغط على الزر
+  const handleInstallApp = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(() => {
+        setDeferredPrompt(null);
+      });
+    } else {
+      showAlert(
+        'تثبيت التطبيق',
+        'لتثبيت التطبيق مباشرة:\n\n• على أندرويد: اضغط خيارات المتصفح (⋮) ثم اختر "تثبيت التطبيق".\n• على الآيفون: اضغط زر المشاركة (مربع بسهم) ثم اختر "إضافة إلى الشاشة الرئيسية".'
+      );
+    }
+  };
 
   const getShareUrl = () => {
     let baseUrl = 'https://shopping-list.app';
@@ -731,6 +757,13 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
+      {/* زر تثبيت التطبيق المباشر */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+        <TouchableOpacity style={styles.installBannerBtn} onPress={handleInstallApp}>
+          <Text style={styles.installBannerText}>📲 تثبيت التطبيق على الجوال</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.inputContainer}>
         <TouchableOpacity style={styles.addButton} onPress={handleAddItem}>
           <Text style={styles.addButtonText}>إضافة</Text>
@@ -988,10 +1021,13 @@ const styles = StyleSheet.create({
   logoutBtn: { backgroundColor: '#f1f5f9', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   logoutText: { fontSize: 12, color: '#dc2626', fontWeight: 'bold' },
 
+  installBannerBtn: { backgroundColor: '#0284c7', padding: 12, borderRadius: 10, alignItems: 'center' },
+  installBannerText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+
   shareBannerBtn: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', padding: 10, borderRadius: 10, alignItems: 'center' },
   shareBannerText: { color: '#16a34a', fontWeight: 'bold', fontSize: 13 },
 
-  inputContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, gap: 10 },
+  inputContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10 },
   mainInput: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, paddingHorizontal: 14 },
   addButton: { backgroundColor: '#16a34a', paddingHorizontal: 20, justifyContent: 'center', borderRadius: 12 },
   addButtonText: { color: '#fff', fontWeight: 'bold' },
