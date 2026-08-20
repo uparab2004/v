@@ -91,7 +91,21 @@ export default function App() {
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
 
+  // حالات نافذة المشاركة الجديدة
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   const inputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const codeFromUrl = urlParams.get('code');
+      if (codeFromUrl) {
+        setInputCode(codeFromUrl.toUpperCase().trim());
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const checkSavedSession = async () => {
@@ -102,6 +116,15 @@ export default function App() {
 
         if (savedName) setUserName(savedName);
         if (savedHName) setCurrentHouseholdName(savedHName);
+
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search);
+          const codeFromUrl = urlParams.get('code');
+          if (codeFromUrl && codeFromUrl.toUpperCase() !== savedCode) {
+            setScreen('join');
+            return;
+          }
+        }
 
         if (savedCode && savedName) {
           const cleanName = savedName.trim();
@@ -115,8 +138,8 @@ export default function App() {
             .ilike('name', cleanName)
             .order('is_admin', { ascending: false });
 
-          const adminMember = memberList?.find(m => m.is_admin);
-          const approvedMember = memberList?.find(m => m.status === 'approved');
+          const adminMember = memberList?.find((m) => m.is_admin);
+          const approvedMember = memberList?.find((m) => m.status === 'approved');
 
           if (adminMember || approvedMember) {
             setIsAdmin(!!adminMember || !!approvedMember?.is_admin);
@@ -127,6 +150,8 @@ export default function App() {
           } else {
             setScreen('welcome');
           }
+        } else if (inputCode) {
+          setScreen('join');
         }
       } catch (e) {
         console.log('Error reading storage', e);
@@ -134,6 +159,33 @@ export default function App() {
     };
     checkSavedSession();
   }, []);
+
+  const getShareUrl = () => {
+    let baseUrl = 'https://shopping-list.app';
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      baseUrl = window.location.origin + window.location.pathname;
+    }
+    return `${baseUrl}?code=${familyCode}`;
+  };
+
+  const handleOpenShare = () => {
+    setCopied(false);
+    setShowShareModal(true);
+  };
+
+  const handleCopyLink = async () => {
+    const url = getShareUrl();
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+      } else {
+        setCopied(true);
+      }
+    } catch (e) {
+      setCopied(true);
+    }
+  };
 
   const fetchMyHouseholds = async (name: string) => {
     const cleanName = name.trim();
@@ -148,11 +200,11 @@ export default function App() {
       .ilike('name', cleanName);
 
     if (memberData) {
-      candidateCodes = memberData.map(d => ({ household_code: d.household_code, is_admin: d.is_admin }));
+      candidateCodes = memberData.map((d) => ({ household_code: d.household_code, is_admin: d.is_admin }));
     }
 
     const uniqueMap = new Map<string, boolean>();
-    candidateCodes.forEach(item => uniqueMap.set(item.household_code, item.is_admin));
+    candidateCodes.forEach((item) => uniqueMap.set(item.household_code, item.is_admin));
     const allCodes = Array.from(uniqueMap.keys());
 
     if (allCodes.length === 0) {
@@ -166,7 +218,7 @@ export default function App() {
       .select('code, name')
       .in('code', allCodes);
 
-    const verifiedHouseholds: HouseholdSession[] = (validHouseholds || []).map(h => ({
+    const verifiedHouseholds: HouseholdSession[] = (validHouseholds || []).map((h) => ({
       household_code: h.code,
       household_name: h.name || `عائلة (${h.code})`,
       is_admin: uniqueMap.get(h.code) || false,
@@ -174,7 +226,7 @@ export default function App() {
 
     setMyHouseholds(verifiedHouseholds);
 
-    const activeCurrent = verifiedHouseholds.find(h => h.household_code === familyCode);
+    const activeCurrent = verifiedHouseholds.find((h) => h.household_code === familyCode);
     if (activeCurrent) {
       setCurrentHouseholdName(activeCurrent.household_name);
       await AsyncStorage.setItem('householdName', activeCurrent.household_name);
@@ -279,8 +331,8 @@ export default function App() {
             .ilike('name', cleanName)
             .order('is_admin', { ascending: false });
 
-          const adminMem = currentMemList?.find(m => m.is_admin);
-          const approvedMem = currentMemList?.find(m => m.status === 'approved');
+          const adminMem = currentMemList?.find((m) => m.is_admin);
+          const approvedMem = currentMemList?.find((m) => m.status === 'approved');
 
           if (adminMem || approvedMem) {
             const isAdm = !!adminMem || !!approvedMem?.is_admin;
@@ -316,7 +368,7 @@ export default function App() {
       const cleanName = userName.trim();
 
       const { error: hError } = await supabase.from('households').insert([
-        { code: code, name: hName }
+        { code: code, name: hName },
       ]);
 
       if (hError) {
@@ -352,7 +404,6 @@ export default function App() {
     }
   };
 
-  // دالة الدخول الحصينة (تعطي الأولوية المباشرة لسجل المشرف)
   const handleJoinHousehold = async () => {
     const cleanName = userName.trim();
     const code = inputCode.toUpperCase().trim();
@@ -365,7 +416,6 @@ export default function App() {
     setLoading(true);
 
     try {
-      // 1. جلب بيانات المجموعة
       const { data: household } = await supabase
         .from('households')
         .select('code, name')
@@ -379,23 +429,20 @@ export default function App() {
 
       const fetchedHName = household.name || `عائلة (${code})`;
 
-      // 2. البحث عن كافة السجلات المسجلة بهذا الاسم
       const { data: existingMembers } = await supabase
         .from('members')
         .select('*')
         .eq('household_code', code)
         .ilike('name', cleanName);
 
-      const adminRecord = existingMembers?.find(m => m.is_admin);
-      const approvedRecord = existingMembers?.find(m => m.status === 'approved');
+      const adminRecord = existingMembers?.find((m) => m.is_admin);
+      const approvedRecord = existingMembers?.find((m) => m.status === 'approved');
 
       if (adminRecord || approvedRecord) {
-        // إذا وجد سجل مشرف أو عضو مقبول، يتم الدخول فوراً
         const targetRecord = adminRecord || approvedRecord;
         const isAdm = !!adminRecord || !!targetRecord?.is_admin;
 
-        // تنظيف أي طلبات مكررة بحالة معلقة لنفس الاسم
-        const pendingIds = existingMembers?.filter(m => m.status === 'pending').map(m => m.id) || [];
+        const pendingIds = existingMembers?.filter((m) => m.status === 'pending').map((m) => m.id) || [];
         if (pendingIds.length > 0) {
           await supabase.from('members').delete().in('id', pendingIds);
         }
@@ -410,7 +457,6 @@ export default function App() {
         setInputCode('');
         setScreen('main');
       } else if (existingMembers && existingMembers.length > 0) {
-        // إذا كان له طلب معلق سابقاً فقط
         setFamilyCode(code);
         setUserName(cleanName);
         setCurrentHouseholdName(fetchedHName);
@@ -420,7 +466,6 @@ export default function App() {
         setInputCode('');
         setScreen('pending');
       } else {
-        // اسم جديد تماماً -> إرسال طلب انضمام جديد
         const { error: insertErr } = await supabase.from('members').insert([
           {
             household_code: code,
@@ -550,8 +595,8 @@ export default function App() {
             textAlign="right"
           />
 
-          <TouchableOpacity 
-            style={[styles.primaryButton, loading && { opacity: 0.7 }]} 
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && { opacity: 0.7 }]}
             onPress={handleCreateHousehold}
             disabled={loading}
           >
@@ -590,8 +635,8 @@ export default function App() {
             autoCapitalize="characters"
             textAlign="center"
           />
-          <TouchableOpacity 
-            style={[styles.primaryButton, loading && { opacity: 0.7 }]} 
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && { opacity: 0.7 }]}
             onPress={handleJoinHousehold}
             disabled={loading}
           >
@@ -619,8 +664,8 @@ export default function App() {
           </Text>
 
           {myHouseholds.length > 0 && (
-            <TouchableOpacity 
-              style={styles.secondaryButton} 
+            <TouchableOpacity
+              style={styles.secondaryButton}
               onPress={() => {
                 const firstGroup = myHouseholds[0];
                 switchHousehold(firstGroup.household_code, firstGroup.household_name, firstGroup.is_admin);
@@ -641,10 +686,11 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
           <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
             <Text style={styles.logoutText}>خروج</Text>
           </TouchableOpacity>
+
           {isAdmin && pendingMembers.length > 0 && (
             <TouchableOpacity onPress={() => setShowRequestsModal(true)} style={styles.alertBadge}>
               <Text style={styles.alertBadgeText}>الطلبات ({pendingMembers.length})</Text>
@@ -657,7 +703,7 @@ export default function App() {
 
         <TouchableOpacity onPress={() => setShowSwitchModal(true)} style={{ alignItems: 'flex-end' }}>
           <Text style={styles.headerTitle}>{currentHouseholdName || 'قائمة العائلة'} ▾</Text>
-          <Text style={styles.headerCode}>رمز الانضمام: {familyCode} (تبديل)</Text>
+          <Text style={styles.headerCode}>رمز الانضمام: {familyCode}</Text>
         </TouchableOpacity>
       </View>
 
@@ -677,12 +723,19 @@ export default function App() {
         />
       </View>
 
+      {/* زر فتح نافذة المشاركة المباشرة */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
+        <TouchableOpacity style={styles.shareBannerBtn} onPress={handleOpenShare}>
+          <Text style={styles.shareBannerText}>🔗 مشاركة رابط انضمام للعائلة</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={styles.hintText}>💡 اضغط على الغرض أو الاسم لنقله إلى قسم "تم شراؤها"</Text>
 
       <ScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
         {activeItems.map((item) => (
           <View key={item.id} style={styles.itemCard}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.userColumn}
               onPress={() => toggleItem(item.id, item.completed)}
               activeOpacity={0.7}
@@ -711,8 +764,8 @@ export default function App() {
               </View>
             </Pressable>
 
-            <TouchableOpacity 
-              style={styles.itemTextColumn} 
+            <TouchableOpacity
+              style={styles.itemTextColumn}
               onPress={() => toggleItem(item.id, item.completed)}
               activeOpacity={0.7}
             >
@@ -730,8 +783,8 @@ export default function App() {
                   <TouchableOpacity onPress={() => deleteItem(item.id)} style={styles.deleteBtn}>
                     <Text style={styles.deleteBtnText}>✕</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={{ flex: 1, paddingVertical: 12 }} 
+                  <TouchableOpacity
+                    style={{ flex: 1, paddingVertical: 12 }}
                     onPress={() => toggleItem(item.id, item.completed)}
                     activeOpacity={0.7}
                   >
@@ -743,8 +796,8 @@ export default function App() {
                   <Text style={styles.qtyTextSimple}>الكمية: {item.quantity}</Text>
                 </Pressable>
 
-                <TouchableOpacity 
-                  style={styles.itemTextColumn} 
+                <TouchableOpacity
+                  style={styles.itemTextColumn}
                   onPress={() => toggleItem(item.id, item.completed)}
                   activeOpacity={0.7}
                 >
@@ -756,12 +809,45 @@ export default function App() {
         )}
       </ScrollView>
 
+      {/* نافذة المشاركة المخصصة المضمنة */}
+      <Modal visible={showShareModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>مشاركة "{currentHouseholdName}"</Text>
+            <Text style={{ textAlign: 'center', color: '#64748b', marginBottom: 12 }}>
+              رمز الانضمام المباشر: <Text style={{ fontWeight: 'bold', color: '#16a34a' }}>{familyCode}</Text>
+            </Text>
+
+            <TextInput
+              style={[styles.input, { fontSize: 13, color: '#334155', textAlign: 'left' }]}
+              value={getShareUrl()}
+              editable={false}
+              selectTextOnFocus
+            />
+
+            <TouchableOpacity
+              style={[styles.primaryButton, copied && { backgroundColor: '#059669' }]}
+              onPress={handleCopyLink}
+            >
+              <Text style={styles.primaryButtonText}>
+                {copied ? 'تم نسخ الرابط بنجاح! ✅' : 'نسخ الرابط 📋'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setShowShareModal(false)} style={styles.linkButton}>
+              <Text style={[styles.linkText, { textAlign: 'center' }]}>إغلاق</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* نافذة التبديل */}
       <Modal visible={showSwitchModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>مجموعاتي (العائلات)</Text>
-            
-            <ScrollView style={{ maxHeight: 240, marginBottom: 12 }}>
+
+            <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
               {myHouseholds.length === 0 ? (
                 <Text style={{ textAlign: 'center', color: '#64748b', marginVertical: 12 }}>
                   لا توجد مجموعات رئيسية أخرى مسجلة
@@ -788,22 +874,22 @@ export default function App() {
               )}
             </ScrollView>
 
-            <TouchableOpacity 
-              style={styles.primaryButton} 
+            <TouchableOpacity
+              style={styles.primaryButton}
               onPress={() => { setShowSwitchModal(false); setScreen('join'); }}
             >
               <Text style={styles.primaryButtonText}>+ الانضمام لعائلة أخرى</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.secondaryButton} 
+            <TouchableOpacity
+              style={styles.secondaryButton}
               onPress={() => { setShowSwitchModal(false); setScreen('create'); }}
             >
               <Text style={styles.secondaryButtonText}>+ إنشاء عائلة جديدة</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={() => setShowSwitchModal(false)} 
+            <TouchableOpacity
+              onPress={() => setShowSwitchModal(false)}
               style={styles.linkButton}
             >
               <Text style={[styles.linkText, { textAlign: 'center' }]}>إغلاق</Text>
@@ -878,6 +964,9 @@ const styles = StyleSheet.create({
   alertBadgeText: { fontSize: 12, color: '#dc2626', fontWeight: 'bold' },
   logoutBtn: { backgroundColor: '#f1f5f9', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   logoutText: { fontSize: 12, color: '#dc2626', fontWeight: 'bold' },
+
+  shareBannerBtn: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0', padding: 10, borderRadius: 10, alignItems: 'center' },
+  shareBannerText: { color: '#16a34a', fontWeight: 'bold', fontSize: 13 },
 
   inputContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, gap: 10 },
   mainInput: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, paddingHorizontal: 14 },
