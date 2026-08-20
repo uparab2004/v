@@ -91,11 +91,24 @@ export default function App() {
   const [showRequestsModal, setShowRequestsModal] = useState(false);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
 
-  // حالات نافذة المشاركة الجديدة
+  // حالات نافذة المشاركة
   const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
+
+  // ربط ملف manifest.json بالمتصفح تلقائياً
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      let manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
+      if (!manifestLink) {
+        manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = '/manifest.json';
+        document.head.appendChild(manifestLink);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -723,7 +736,6 @@ export default function App() {
         />
       </View>
 
-      {/* زر فتح نافذة المشاركة المباشرة */}
       <View style={{ paddingHorizontal: 16, marginBottom: 8 }}>
         <TouchableOpacity style={styles.shareBannerBtn} onPress={handleOpenShare}>
           <Text style={styles.shareBannerText}>🔗 مشاركة رابط انضمام للعائلة</Text>
@@ -809,7 +821,7 @@ export default function App() {
         )}
       </ScrollView>
 
-      {/* نافذة المشاركة المخصصة المضمنة */}
+      {/* نافذة المشاركة المخصصة */}
       <Modal visible={showShareModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -989,7 +1001,7 @@ const styles = StyleSheet.create({
 
   itemTextColumn: {
     flex: 1,
-    justifyContent: 'center',
+    justify: 'center',
     alignItems: 'flex-end',
     paddingVertical: 12,
     paddingRight: 12,
@@ -1003,7 +1015,7 @@ const styles = StyleSheet.create({
 
   userColumn: {
     flex: 1,
-    justifyContent: 'center',
+    justify: 'center',
     alignItems: 'flex-start',
     paddingVertical: 12,
     paddingLeft: 12,
@@ -1017,7 +1029,7 @@ const styles = StyleSheet.create({
 
   quantityColumn: {
     width: 120,
-    justifyContent: 'center',
+    justify: 'center',
     alignItems: 'center',
     paddingVertical: 8,
   },
@@ -1037,7 +1049,7 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 6,
     alignItems: 'center',
-    justifyContent: 'center',
+    justify: 'center',
   },
   qtyBtnDisabled: {
     backgroundColor: '#cbd5e1',
