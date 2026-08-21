@@ -11,6 +11,7 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  Share,
 } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
@@ -67,6 +68,7 @@ export default function App() {
   const [members, setMembers] = useState<Member[]>([]);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showRequestsModal, setShowRequestsModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
 
@@ -159,26 +161,40 @@ export default function App() {
       Alert.alert('تنبيه', 'الرجاء إدخال الاسم ورمز العائلة');
       return;
     }
-    const code = inputCode.toUpperCase();
+    const cleanCode = inputCode.trim().toUpperCase();
 
-    const { data } = await supabase.from('households').select('code').eq('code', code).single();
-    if (!data) {
+    const { data, error } = await supabase
+      .from('households')
+      .select('code')
+      .eq('code', cleanCode);
+
+    if (error || !data || data.length === 0) {
       Alert.alert('خطأ', 'رمز العائلة غير موجود');
       return;
     }
 
     await supabase.from('members').insert([
       {
-        household_code: code,
+        household_code: cleanCode,
         name: userName.trim(),
         is_admin: false,
         status: 'pending',
       },
     ]);
 
-    setFamilyCode(code);
+    setFamilyCode(cleanCode);
     setIsAdmin(false);
     setScreen('pending');
+  };
+
+  const handleShareCode = async () => {
+    try {
+      await Share.share({
+        message: `انضم لقائمة المقاضي العائلية الخاصة بنا! استخدم رمز الانضمام: ${familyCode}`,
+      });
+    } catch (error) {
+      console.log(error);
+    }
   };
 
   const handleAddItem = async () => {
@@ -331,9 +347,12 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       
-      {/* الهيدر مع تحسين المسافة العلوية لعدم التداخل مع إشعارات الجوال */}
+      {/* الهيدر */}
       <View style={styles.header}>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => setShowAboutModal(true)} style={styles.infoBtn}>
+            <Text style={styles.infoBtnText}>❗</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => setShowMembersModal(true)} style={styles.badge}>
             <Text style={styles.badgeText}>الأعضاء ({approvedMembers.length})</Text>
           </TouchableOpacity>
@@ -347,6 +366,13 @@ export default function App() {
           <Text style={styles.headerTitle}>قائمة المقاضي</Text>
           <Text style={styles.headerCode}>رمز الانضمام: {familyCode}</Text>
         </View>
+      </View>
+
+      {/* زر مشاركة رابط العائلة */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+        <TouchableOpacity style={styles.shareBannerBtn} onPress={handleShareCode}>
+          <Text style={styles.shareBannerText}>🔗 مشاركة رابط/رمز انضمام العائلة</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.inputContainer}>
@@ -365,8 +391,7 @@ export default function App() {
         />
       </View>
 
-      {/* عبارة توضيحية للمستخدم */}
-      <Text style={styles.hintText}>💡 اضغط على الغرض أو الاسم لنقله إلى قسم "تم شراؤها"</Text>
+      <Text style={styles.hintText}>💡 اضغط على الغرض لنقله إلى قسم "تم شراؤها"</Text>
 
       <ScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
         {activeItems.map((item) => (
@@ -390,7 +415,7 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* 3. اسم المضيف أقصى اليسار */}
+            {/* 3. اسم المضيف الأصلي أقصى اليسار */}
             <View style={{ flex: 1, alignItems: 'flex-end' }}>
               <Text style={styles.itemUser}>{item.addedBy}</Text>
             </View>
@@ -402,20 +427,20 @@ export default function App() {
             <Text style={styles.sectionHeader}>تم شراؤها (انقر على الغرض لاستعادته)</Text>
             {completedItems.map((item) => (
               <View key={item.id} style={[styles.itemCard, styles.completedCard]}>
-                {/* 1. اسم الغرض (يمين) */}
+                {/* 1. اسم الغرض أقصى اليمين */}
                 <TouchableOpacity
                   style={{ flex: 2, alignItems: 'flex-start' }}
                   onPress={() => toggleItem(item.id, item.completed)}
                 >
-                  <Text style={[styles.itemText, styles.completedText]}>{item.text} ({item.quantity})</Text>
+                  <Text style={[styles.itemText, styles.completedText]}>{item.text}</Text>
                 </TouchableOpacity>
 
-                {/* 2. اسم المضيف (منتصف) */}
-                <View style={{ flex: 1, alignItems: 'flex-end', marginHorizontal: 8 }}>
-                  <Text style={styles.itemUser}>{item.addedBy}</Text>
+                {/* 2. اسم الشخص الذي أضاف الغرض أصلاً في المنتصف */}
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={styles.itemUser}>بواسطة: {item.addedBy}</Text>
                 </View>
 
-                {/* 3. زر الحذف X في أقصى اليسار */}
+                {/* 3. زر الحذف X أقصى اليسار */}
                 <TouchableOpacity onPress={() => deleteItem(item.id)} style={styles.deleteBtn}>
                   <Text style={styles.deleteBtnText}>✕</Text>
                 </TouchableOpacity>
@@ -425,6 +450,24 @@ export default function App() {
         )}
       </ScrollView>
 
+      {/* نافذة "عن التطبيق والتواصل" */}
+      <Modal visible={showAboutModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>عن التطبيق 💡</Text>
+            <Text style={styles.aboutText}>
+              تطبيق "قائمة العائلة" هو مساحتك المشتركة لتنظيم وتسوق المقاضي والاحتياجات اليومية مع أفراد عائلتك في وقت حي ومباشر دون تكرار للشراء.
+            </Text>
+            <Text style={styles.aboutSubTitle}>📧 للتواصل والإقتراحات:</Text>
+            <Text style={styles.emailText}>support@familylist.app</Text>
+            <TouchableOpacity onPress={() => setShowAboutModal(false)} style={[styles.primaryButton, { marginTop: 20 }]}>
+              <Text style={styles.primaryButtonText}>إغلاق</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* نافذة الأعضاء */}
       <Modal visible={showMembersModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -442,6 +485,7 @@ export default function App() {
         </View>
       </Modal>
 
+      {/* نافذة الطلبات */}
       <Modal visible={showRequestsModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -497,7 +541,18 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 12, color: '#475569', fontWeight: 'bold' },
   alertBadge: { backgroundColor: '#fef2f2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   alertBadgeText: { fontSize: 12, color: '#dc2626', fontWeight: 'bold' },
-  inputContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, gap: 10 },
+  infoBtn: { backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  infoBtnText: { fontSize: 14 },
+  shareBannerBtn: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  shareBannerText: { color: '#16a34a', fontWeight: 'bold', fontSize: 14 },
+  inputContainer: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10 },
   mainInput: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, paddingHorizontal: 14 },
   addButton: { backgroundColor: '#16a34a', paddingHorizontal: 20, justifyContent: 'center', borderRadius: 12 },
   addButtonText: { color: '#fff', fontWeight: 'bold' },
@@ -529,6 +584,9 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 16, padding: 20 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 },
+  aboutText: { fontSize: 14, color: '#475569', textAlign: 'center', lineHeight: 22, marginBottom: 16 },
+  aboutSubTitle: { fontSize: 14, fontWeight: 'bold', color: '#0f172a', textAlign: 'center', marginTop: 8 },
+  emailText: { fontSize: 14, color: '#16a34a', fontWeight: 'bold', textAlign: 'center', marginTop: 4 },
   memberRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderColor: '#f1f5f9' },
   memberName: { fontSize: 16, color: '#334155' },
   roleTag: { color: '#16a34a', fontWeight: 'bold' },
