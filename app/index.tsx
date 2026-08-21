@@ -25,6 +25,7 @@ interface Item {
   id: string;
   text: string;
   addedBy: string;
+  completedBy?: string;
   category: string;
   quantity: number;
   completed: boolean;
@@ -85,6 +86,7 @@ export default function App() {
         id: d.id,
         text: d.text,
         addedBy: d.added_by || 'عضو',
+        completedBy: d.completed_by || undefined,
         category: d.category || '📦 أغراض أخرى',
         quantity: d.quantity || 1,
         completed: d.completed || false,
@@ -163,34 +165,59 @@ export default function App() {
     }
     const cleanCode = inputCode.trim().toUpperCase();
 
-    const { data, error } = await supabase
+    const { data: hData, error: hError } = await supabase
       .from('households')
       .select('code')
       .eq('code', cleanCode);
 
-    if (error || !data || data.length === 0) {
+    if (hError || !hData || hData.length === 0) {
       Alert.alert('خطأ', 'رمز العائلة غير موجود');
       return;
     }
 
-    await supabase.from('members').insert([
-      {
-        household_code: cleanCode,
-        name: userName.trim(),
-        is_admin: false,
-        status: 'pending',
-      },
-    ]);
+    // التعرف التلقائي على المشرف الأصلي
+    const { data: adminMember } = await supabase
+      .from('members')
+      .select('*')
+      .eq('household_code', cleanCode)
+      .eq('name', userName.trim())
+      .eq('is_admin', true);
+
+    if (adminMember && adminMember.length > 0) {
+      setFamilyCode(cleanCode);
+      setIsAdmin(true);
+      setScreen('main');
+      return;
+    }
+
+    const { data: existingMember } = await supabase
+      .from('members')
+      .select('*')
+      .eq('household_code', cleanCode)
+      .eq('name', userName.trim());
+
+    if (!existingMember || existingMember.length === 0) {
+      await supabase.from('members').insert([
+        {
+          household_code: cleanCode,
+          name: userName.trim(),
+          is_admin: false,
+          status: 'pending',
+        },
+      ]);
+    }
 
     setFamilyCode(cleanCode);
     setIsAdmin(false);
-    setScreen('pending');
+    
+    const isApproved = existingMember && existingMember[0]?.status === 'approved';
+    setScreen(isApproved ? 'main' : 'pending');
   };
 
   const handleShareCode = async () => {
     try {
       await Share.share({
-        message: `انضم لقائمة المقاضي العائلية الخاصة بنا! استخدم رمز الانضمام: ${familyCode}`,
+        message: `انضم لقائمة تطبيق مقاضي العائلية الخاصة بنا! استخدم رمز الانضمام: ${familyCode}`,
       });
     } catch (error) {
       console.log(error);
@@ -221,8 +248,23 @@ export default function App() {
     fetchItems();
   };
 
+  // تبديل حالة الغرض (عند الشراء يتم تسديد اسم الشاري، وعند الاستعادة يعود لصاحبه الأصلي)
   const toggleItem = async (id: string, completed: boolean) => {
-    await supabase.from('items').update({ completed: !completed }).eq('id', id);
+    const currentUserName = userName.trim() || 'عضو';
+    
+    if (!completed) {
+      // عند التبديل لـ "تم شراؤها": نحفظ اسم الشخص الذي شطبه
+      await supabase
+        .from('items')
+        .update({ completed: true, completed_by: currentUserName })
+        .eq('id', id);
+    } else {
+      // عند الإعادة للقائمة النشطة: نلغي اسم الشاري ليعود محتفظاً باسم صاحبه الأصلي
+      await supabase
+        .from('items')
+        .update({ completed: false, completed_by: null })
+        .eq('id', id);
+    }
     fetchItems();
   };
 
@@ -255,7 +297,8 @@ export default function App() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centerBox}>
-          <Text style={styles.title}>قائمة العائلة</Text>
+          <Text style={styles.logoIcon}>🛒</Text>
+          <Text style={styles.title}>تطبيق مقاضي</Text>
           <Text style={styles.subtitle}>قائمة تسوق مشتركة لعائلتك في مكان واحد</Text>
           <TouchableOpacity style={styles.primaryButton} onPress={() => setScreen('create')}>
             <Text style={styles.primaryButtonText}>إنشاء عائلة جديدة +</Text>
@@ -347,7 +390,7 @@ export default function App() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       
-      {/* الهيدر */}
+      {/* الهيدر العلوي */}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <TouchableOpacity onPress={() => setShowAboutModal(true)} style={styles.infoBtn}>
@@ -363,7 +406,7 @@ export default function App() {
           )}
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={styles.headerTitle}>قائمة المقاضي</Text>
+          <Text style={styles.headerTitle}>🛒 مقاضي</Text>
           <Text style={styles.headerCode}>رمز الانضمام: {familyCode}</Text>
         </View>
       </View>
@@ -375,6 +418,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
+      {/* شريط الإدخال */}
       <View style={styles.inputContainer}>
         <TouchableOpacity style={styles.addButton} onPress={handleAddItem}>
           <Text style={styles.addButtonText}>إضافة</Text>
@@ -394,6 +438,7 @@ export default function App() {
       <Text style={styles.hintText}>💡 اضغط على الغرض لنقله إلى قسم "تم شراؤها"</Text>
 
       <ScrollView style={{ flex: 1, paddingHorizontal: 16 }}>
+        {/* قائمة الأغراض المطلوبة (الترتيب: الغرض يمين | العداد منتصف | أضافه يسار) */}
         {activeItems.map((item) => (
           <View key={item.id} style={styles.itemCard}>
             {/* 1. اسم الغرض أقصى اليمين */}
@@ -404,7 +449,7 @@ export default function App() {
               <Text style={styles.itemText}>{item.text}</Text>
             </TouchableOpacity>
 
-            {/* 2. العداد في المنتصف */}
+            {/* 2. العداد بالمنتصف */}
             <View style={styles.qtyContainer}>
               <TouchableOpacity onPress={() => updateQuantity(item.id, item.quantity, 1)} style={styles.qtyBtn}>
                 <Text style={styles.qtyBtnText}>+</Text>
@@ -415,13 +460,14 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            {/* 3. اسم المضيف الأصلي أقصى اليسار */}
+            {/* 3. اسم الكاتب أقصى اليسار */}
             <View style={{ flex: 1, alignItems: 'flex-end' }}>
               <Text style={styles.itemUser}>{item.addedBy}</Text>
             </View>
           </View>
         ))}
 
+        {/* قائمة الأغراض المشتراة (عرض اسم الشخص الذي شطبها) */}
         {completedItems.length > 0 && (
           <>
             <Text style={styles.sectionHeader}>تم شراؤها (انقر على الغرض لاستعادته)</Text>
@@ -432,12 +478,14 @@ export default function App() {
                   style={{ flex: 2, alignItems: 'flex-start' }}
                   onPress={() => toggleItem(item.id, item.completed)}
                 >
-                  <Text style={[styles.itemText, styles.completedText]}>{item.text}</Text>
+                  <Text style={[styles.itemText, styles.completedText]}>{item.text} ({item.quantity})</Text>
                 </TouchableOpacity>
 
-                {/* 2. اسم الشخص الذي أضاف الغرض أصلاً في المنتصف */}
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                  <Text style={styles.itemUser}>بواسطة: {item.addedBy}</Text>
+                {/* 2. اسم الشخص الذي قام بالشراء في المنتصف */}
+                <View style={{ flex: 1.5, alignItems: 'center' }}>
+                  <Text style={styles.completedByUser}>
+                    شراها: {item.completedBy || item.addedBy}
+                  </Text>
                 </View>
 
                 {/* 3. زر الحذف X أقصى اليسار */}
@@ -450,16 +498,17 @@ export default function App() {
         )}
       </ScrollView>
 
-      {/* نافذة "عن التطبيق والتواصل" */}
+      {/* نافذة "عن التطبيق والتواصل" ❗ */}
       <Modal visible={showAboutModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>عن التطبيق 💡</Text>
+            <Text style={styles.aboutLogo}>🛒</Text>
+            <Text style={styles.modalTitle}>عن تطبيق مقاضي 💡</Text>
             <Text style={styles.aboutText}>
-              تطبيق "قائمة العائلة" هو مساحتك المشتركة لتنظيم وتسوق المقاضي والاحتياجات اليومية مع أفراد عائلتك في وقت حي ومباشر دون تكرار للشراء.
+              تطبيق "مقاضي" هو مساحتكم المشتركة لتنظيم وتسوق احتياجات المنزل اليومية مع أفراد العائلة لحظة بلحظة وتجنب التكرار في الشراء.
             </Text>
             <Text style={styles.aboutSubTitle}>📧 للتواصل والإقتراحات:</Text>
-            <Text style={styles.emailText}>support@familylist.app</Text>
+            <Text style={styles.emailText}>support@maqadhiapp.com</Text>
             <TouchableOpacity onPress={() => setShowAboutModal(false)} style={[styles.primaryButton, { marginTop: 20 }]}>
               <Text style={styles.primaryButtonText}>إغلاق</Text>
             </TouchableOpacity>
@@ -515,6 +564,8 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 24 : 0,
   },
   centerBox: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  logoIcon: { fontSize: 60, marginBottom: 12 },
+  aboutLogo: { fontSize: 48, textAlign: 'center', marginBottom: 8 },
   title: { fontSize: 26, fontWeight: 'bold', color: '#0f172a', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#64748b', textAlign: 'center', marginBottom: 32 },
   input: { width: '100%', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 14, fontSize: 16, marginBottom: 16 },
@@ -573,6 +624,7 @@ const styles = StyleSheet.create({
   },
   itemText: { fontSize: 16, color: '#1e293b', fontWeight: 'bold' },
   itemUser: { fontSize: 13, color: '#64748b', fontWeight: '500' },
+  completedByUser: { fontSize: 12, color: '#16a34a', fontWeight: 'bold' },
   completedCard: { backgroundColor: '#f8fafc', opacity: 0.7 },
   completedText: { textDecorationLine: 'line-through', color: '#94a3b8' },
   qtyContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', borderRadius: 8, padding: 2 },
