@@ -127,10 +127,18 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     async function init() {
-      const userId = await getOrCreateUserId();
-      if (!isMounted) return;
-      userIdRef.current = userId;
-      await loadOwnMembership(userId);
+      try {
+        const userId = await getOrCreateUserId();
+        if (!isMounted) return;
+        userIdRef.current = userId;
+        await loadOwnMembership(userId);
+      } catch (error) {
+        console.error('identity initialization failed', error);
+        if (isMounted) {
+          setErrorMessage('تعذر تهيئة هوية الجهاز، حاول مرة أخرى');
+          setPhase('onboarding');
+        }
+      }
     }
 
     init();
@@ -174,7 +182,6 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       if (!userId) return;
       const { data, error } = await supabase.rpc('create_household', {
         p_name: name,
-        p_user_id: userId,
       });
       if (error || !data || data.length === 0) {
         setErrorMessage(friendlyMessage(error));
@@ -202,7 +209,6 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.rpc('request_join_household', {
         p_code: code,
         p_name: name,
-        p_user_id: userId,
       });
       if (error || !data || data.length === 0) {
         setErrorMessage(friendlyMessage(error));
@@ -230,7 +236,6 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.rpc('respond_to_join_request', {
         p_member_id: memberId,
         p_approve: approve,
-        p_user_id: userId,
       });
       if (error) {
         setErrorMessage(friendlyMessage(error));

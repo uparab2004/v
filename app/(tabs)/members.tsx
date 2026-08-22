@@ -123,7 +123,7 @@ export default function MembersScreen() {
       <TouchableOpacity style={styles.leaveButton} onPress={handleLeave}>
         <LogOut color={colors.error[600]} size={18} strokeWidth={2} />
         <Text style={styles.leaveText}>
-          {isAdmin ? 'حذف العائلة والمغادرة' : 'مغادرة العائلة'}
+          مغادرة العائلة
         </Text>
       </TouchableOpacity>
     </ScrollView>

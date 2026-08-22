@@ -16,7 +16,7 @@ export default function TabLayout() {
     );
   }
 
-  if (phase === 'onboarding') return <Redirect href="/(auth)" />;
+  if (phase === 'onboarding') return <Redirect href="/" />;
   if (phase === 'pending' || phase === 'rejected') return <Redirect href="/(auth)/pending" />;
 
   return (

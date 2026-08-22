@@ -1,23 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/lib/supabase';
 
 const DEVICE_ID_KEY = 'device_user_id';
 
 export async function getOrCreateUserId(): Promise<string> {
-  let id = await AsyncStorage.getItem(DEVICE_ID_KEY);
-  if (!id) {
-    id = generateUUID();
-    await AsyncStorage.setItem(DEVICE_ID_KEY, id);
-  }
-  return id;
-}
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-export function generateUUID(): string {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
+  if (session?.user) {
+    return session.user.id;
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error || !data.user) {
+    throw error ?? new Error('تعذر إنشاء هوية آمنة للجهاز');
+  }
+
+  await AsyncStorage.removeItem(DEVICE_ID_KEY);
+  return data.user.id;
 }
