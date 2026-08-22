@@ -17,7 +17,7 @@ import { colors, fontFamily, spacing, radius } from '@/lib/theme';
 type Mode = 'home' | 'create' | 'join';
 
 export default function OnboardingScreen() {
-  const { createHousehold, joinHousehold, errorMessage, clearError } = useHousehold();
+  const { createHousehold, joinHousehold, errorMessage, clearError, retryIdentity } = useHousehold();
   const [mode, setMode] = useState<Mode>('home');
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -54,6 +54,14 @@ export default function OnboardingScreen() {
         </View>
 
         <View style={styles.actions}>
+          {errorMessage && (
+            <>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={retryIdentity}>
+                <Text style={styles.retryButtonText}>إعادة المحاولة</Text>
+              </TouchableOpacity>
+            </>
+          )}
           <TouchableOpacity style={styles.primaryButton} onPress={() => switchMode('create')}>
             <Plus color="#fff" size={22} strokeWidth={2.5} />
             <Text style={styles.primaryButtonText}>إنشاء عائلة جديدة</Text>
@@ -208,6 +216,15 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 18,
     color: colors.primary[600],
+  },
+  retryButton: {
+    alignSelf: 'center',
+    paddingVertical: spacing(1),
+  },
+  retryButtonText: {
+    fontFamily: fontFamily.medium,
+    fontSize: 15,
+    color: colors.primary[700],
   },
   scrollContent: { flexGrow: 1, justifyContent: 'center' },
   formContainer: {

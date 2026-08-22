@@ -19,6 +19,7 @@ interface HouseholdContextValue {
   members: HouseholdMember[];
   errorMessage: string | null;
   clearError: () => void;
+  retryIdentity: () => void;
   createHousehold: (name: string) => Promise<void>;
   joinHousehold: (code: string, name: string) => Promise<void>;
   respondToRequest: (memberId: string, approve: boolean) => Promise<void>;
@@ -45,9 +46,15 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [member, setMember] = useState<HouseholdMember | null>(null);
   const [members, setMembers] = useState<HouseholdMember[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [identityAttempt, setIdentityAttempt] = useState(0);
   const userIdRef = useRef<string | null>(null);
 
   const clearError = useCallback(() => setErrorMessage(null), []);
+  const retryIdentity = useCallback(() => {
+    setErrorMessage(null);
+    setPhase('loading');
+    setIdentityAttempt((attempt) => attempt + 1);
+  }, []);
 
   const loadMembers = useCallback(async (householdId: string) => {
     const { data, error } = await supabase
@@ -132,8 +139,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         if (!isMounted) return;
         userIdRef.current = userId;
         await loadOwnMembership(userId);
-      } catch (error) {
-        console.error('identity initialization failed', error);
+      } catch {
         if (isMounted) {
           setErrorMessage('تعذر تهيئة هوية الجهاز، حاول مرة أخرى');
           setPhase('onboarding');
@@ -146,7 +152,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, [loadOwnMembership]);
+  }, [identityAttempt, loadOwnMembership]);
 
   useEffect(() => {
     if (!household) return;
@@ -271,6 +277,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         members,
         errorMessage,
         clearError,
+        retryIdentity,
         createHousehold,
         joinHousehold,
         respondToRequest,

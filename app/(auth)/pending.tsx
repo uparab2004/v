@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { Redirect } from 'expo-router';
 import { Clock, X } from 'lucide-react-native';
 import { useHousehold } from '@/contexts/HouseholdContext';
 import { colors, fontFamily, spacing, radius } from '@/lib/theme';
@@ -12,6 +13,12 @@ export default function PendingScreen() {
         <ActivityIndicator size="large" color={colors.primary[600]} />
       </View>
     );
+  }
+
+  // A failed or reset identity must never leave this route displaying an
+  // empty household code and member name.
+  if (phase === 'onboarding') {
+    return <Redirect href="/" />;
   }
 
   if (phase === 'rejected') {
