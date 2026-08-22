@@ -195,7 +195,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const result = data[0];
-      await applyMembership({
+      setMember({
         id: result.member_id,
         household_id: result.household_id,
         user_id: userId,
@@ -204,8 +204,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         is_admin: true,
         created_at: new Date().toISOString(),
       });
+      setHousehold({ id: result.household_id, code: result.code });
+      setPhase('approved');
+      await loadMembers(result.household_id);
     },
-    [applyMembership],
+    [loadMembers],
   );
 
   const joinHousehold = useCallback(

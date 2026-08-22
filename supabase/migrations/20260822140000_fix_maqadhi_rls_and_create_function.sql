@@ -60,7 +60,7 @@ BEGIN
     v_code := maqadhi.generate_household_code();
     EXIT WHEN NOT EXISTS (SELECT 1 FROM maqadhi.households h WHERE h.code = v_code);
   END LOOP;
-  INSERT INTO maqadhi.households (code) VALUES (v_code) RETURNING id INTO v_household_id;
+  INSERT INTO maqadhi.households (code, owner_name) VALUES (v_code, v_name) RETURNING id INTO v_household_id;
   INSERT INTO maqadhi.household_members (household_id, user_id, name, status, is_admin)
   VALUES (v_household_id, auth.uid(), v_name, 'approved', true) RETURNING id INTO v_member_id;
   RETURN QUERY SELECT v_household_id, v_code, v_member_id, true, 'approved'::text;
