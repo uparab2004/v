@@ -163,7 +163,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         'postgres_changes',
         {
           event: '*',
-          schema: 'public',
+          schema: 'maqadhi',
           table: 'household_members',
           filter: `household_id=eq.${household.id}`,
         },

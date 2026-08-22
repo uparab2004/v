@@ -59,7 +59,7 @@ export default function ListScreen() {
         'postgres_changes',
         {
           event: '*',
-          schema: 'public',
+          schema: 'maqadhi',
           table: 'shopping_items',
           filter: `household_id=eq.${household.id}`,
         },
