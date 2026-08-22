@@ -55,6 +55,9 @@ AS $$
 DECLARE v_code text; v_household_id uuid; v_member_id uuid; v_name text := trim(p_name);
 BEGIN
   IF auth.uid() IS NULL THEN RAISE EXCEPTION 'يجب تهيئة هوية الجهاز'; END IF;
+  IF EXISTS (SELECT 1 FROM maqadhi.household_members WHERE user_id = auth.uid()) THEN
+    RAISE EXCEPTION 'أنت مرتبط بعائلة بالفعل';
+  END IF;
   IF v_name IS NULL OR v_name = '' THEN RAISE EXCEPTION 'الاسم مطلوب'; END IF;
   LOOP
     v_code := maqadhi.generate_household_code();

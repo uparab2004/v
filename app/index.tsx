@@ -11,13 +11,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { ShoppingBasket, Plus, LogIn } from 'lucide-react-native';
+import { Redirect } from 'expo-router';
 import { useHousehold } from '@/contexts/HouseholdContext';
 import { colors, fontFamily, spacing, radius } from '@/lib/theme';
 
 type Mode = 'home' | 'create' | 'join';
 
 export default function OnboardingScreen() {
-  const { createHousehold, joinHousehold, errorMessage, clearError, retryIdentity } = useHousehold();
+  const { phase, createHousehold, joinHousehold, errorMessage, clearError, retryIdentity } = useHousehold();
   const [mode, setMode] = useState<Mode>('home');
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -41,6 +42,9 @@ export default function OnboardingScreen() {
     clearError();
     setMode(m);
   };
+
+  if (phase === 'approved') return <Redirect href="/(tabs)" />;
+  if (phase === 'pending' || phase === 'rejected') return <Redirect href="/(auth)/pending" />;
 
   if (mode === 'home') {
     return (
