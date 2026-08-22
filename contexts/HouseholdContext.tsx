@@ -33,7 +33,8 @@ const GENERIC_ERROR = 'حدث خطأ، حاول مرة أخرى';
 function friendlyMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) {
     const message = String((error as { message: unknown }).message);
-    if (message && !message.toLowerCase().includes('policy') && message.length < 120) {
+    const technicalError = /policy|schema cache|column reference|recursion|function|postgres|pgrst/i;
+    if (message && !technicalError.test(message) && message.length < 120) {
       return message;
     }
   }
@@ -121,7 +122,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (error) {
-        console.error('load membership failed', error);
+        setErrorMessage(friendlyMessage(error));
         setPhase('onboarding');
         return;
       }

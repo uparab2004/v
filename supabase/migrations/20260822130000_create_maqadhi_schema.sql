@@ -53,34 +53,48 @@ ALTER TABLE maqadhi.households ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maqadhi.household_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE maqadhi.shopping_items ENABLE ROW LEVEL SECURITY;
 
+CREATE FUNCTION maqadhi.is_household_member(p_household_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = maqadhi, public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM maqadhi.household_members
+    WHERE household_id = p_household_id AND user_id = auth.uid()
+  );
+$$;
+
+CREATE FUNCTION maqadhi.is_approved_member(p_household_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = maqadhi, public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM maqadhi.household_members
+    WHERE household_id = p_household_id AND user_id = auth.uid() AND status = 'approved'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION maqadhi.is_household_member(uuid), maqadhi.is_approved_member(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION maqadhi.is_household_member(uuid), maqadhi.is_approved_member(uuid) TO authenticated;
+
 CREATE POLICY "read own household" ON maqadhi.households FOR SELECT TO authenticated
-  USING (EXISTS (SELECT 1 FROM maqadhi.household_members m WHERE m.household_id = households.id AND m.user_id = auth.uid()));
+  USING (maqadhi.is_household_member(id));
 
 CREATE POLICY "read household members" ON maqadhi.household_members FOR SELECT TO authenticated
-  USING (user_id = auth.uid() OR EXISTS (
-    SELECT 1 FROM maqadhi.household_members me
-    WHERE me.household_id = household_members.household_id AND me.user_id = auth.uid() AND me.status = 'approved'
-  ));
+  USING (user_id = auth.uid() OR maqadhi.is_approved_member(household_id));
 
 CREATE POLICY "leave own household" ON maqadhi.household_members FOR DELETE TO authenticated
   USING (user_id = auth.uid());
 
 CREATE POLICY "read household items" ON maqadhi.shopping_items FOR SELECT TO authenticated
-  USING (EXISTS (SELECT 1 FROM maqadhi.household_members m WHERE m.household_id = shopping_items.household_id AND m.user_id = auth.uid() AND m.status = 'approved'));
+  USING (maqadhi.is_approved_member(household_id));
 
 CREATE POLICY "add household items" ON maqadhi.shopping_items FOR INSERT TO authenticated
-  WITH CHECK (created_by = auth.uid() AND EXISTS (
-    SELECT 1 FROM maqadhi.household_members m WHERE m.household_id = shopping_items.household_id AND m.user_id = auth.uid() AND m.status = 'approved'
-  ));
+  WITH CHECK (created_by = auth.uid() AND maqadhi.is_approved_member(household_id));
 
 CREATE POLICY "update household items" ON maqadhi.shopping_items FOR UPDATE TO authenticated
-  USING (EXISTS (SELECT 1 FROM maqadhi.household_members m WHERE m.household_id = shopping_items.household_id AND m.user_id = auth.uid() AND m.status = 'approved'))
-  WITH CHECK (EXISTS (
-    SELECT 1 FROM maqadhi.household_members m WHERE m.household_id = shopping_items.household_id AND m.user_id = auth.uid() AND m.status = 'approved'
-  ) AND (purchased_by IS NULL OR purchased_by = auth.uid()));
+  USING (maqadhi.is_approved_member(household_id))
+  WITH CHECK (maqadhi.is_approved_member(household_id) AND (purchased_by IS NULL OR purchased_by = auth.uid()));
 
 CREATE POLICY "delete household items" ON maqadhi.shopping_items FOR DELETE TO authenticated
-  USING (EXISTS (SELECT 1 FROM maqadhi.household_members m WHERE m.household_id = shopping_items.household_id AND m.user_id = auth.uid() AND m.status = 'approved'));
+  USING (maqadhi.is_approved_member(household_id));
 
 CREATE FUNCTION maqadhi.generate_household_code()
 RETURNS text LANGUAGE plpgsql SET search_path = maqadhi, public
@@ -102,7 +116,7 @@ BEGIN
   IF v_name IS NULL OR v_name = '' THEN RAISE EXCEPTION 'الاسم مطلوب'; END IF;
   LOOP
     v_code := maqadhi.generate_household_code();
-    EXIT WHEN NOT EXISTS (SELECT 1 FROM maqadhi.households WHERE code = v_code);
+    EXIT WHEN NOT EXISTS (SELECT 1 FROM maqadhi.households h WHERE h.code = v_code);
   END LOOP;
   INSERT INTO maqadhi.households (code) VALUES (v_code) RETURNING id INTO v_household_id;
   INSERT INTO maqadhi.household_members (household_id, user_id, name, status, is_admin)
