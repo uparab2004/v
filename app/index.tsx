@@ -11,7 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { ShoppingBasket, Plus, LogIn } from 'lucide-react-native';
-import { Redirect } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useHousehold } from '@/contexts/HouseholdContext';
 import { colors, fontFamily, spacing, radius } from '@/lib/theme';
 
@@ -19,15 +19,19 @@ type Mode = 'home' | 'create' | 'join';
 
 export default function OnboardingScreen() {
   const { phase, createHousehold, joinHousehold, errorMessage, clearError, retryIdentity } = useHousehold();
-  const [mode, setMode] = useState<Mode>('home');
+  const { mode: requestedMode } = useLocalSearchParams<{ mode?: Mode }>();
+  const [mode, setMode] = useState<Mode>(
+    requestedMode === 'create' || requestedMode === 'join' ? requestedMode : 'home',
+  );
   const [name, setName] = useState('');
+  const [householdName, setHouseholdName] = useState('');
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleCreate = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !householdName.trim()) return;
     setSubmitting(true);
-    await createHousehold(name.trim());
+    await createHousehold(name.trim(), householdName.trim());
     setSubmitting(false);
   };
 
@@ -43,7 +47,7 @@ export default function OnboardingScreen() {
     setMode(m);
   };
 
-  if (phase === 'approved') return <Redirect href="/(tabs)" />;
+  if (phase === 'approved' && mode === 'home') return <Redirect href="/(tabs)" />;
   if (phase === 'pending' || phase === 'rejected') return <Redirect href="/(auth)/pending" />;
 
   if (mode === 'home') {
@@ -94,7 +98,7 @@ export default function OnboardingScreen() {
           </Text>
           <Text style={styles.formSubtitle}>
             {mode === 'create'
-              ? 'أدخل اسمك لتصبح مدير العائلة'
+              ? 'أدخل اسمك واسم المجموعة لتصبح مدير العائلة'
               : 'أدخل اسمك ورمز العائلة للانضمام'}
           </Text>
 
@@ -109,6 +113,20 @@ export default function OnboardingScreen() {
               textAlign="right"
             />
           </View>
+
+          {mode === 'create' && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>اسم المجموعة</Text>
+              <TextInput
+                style={styles.input}
+                value={householdName}
+                onChangeText={setHouseholdName}
+                placeholder="مثال: مجموعة البيت"
+                placeholderTextColor={colors.neutral[400]}
+                textAlign="right"
+              />
+            </View>
+          )}
 
           {mode === 'join' && (
             <View style={styles.inputGroup}>
@@ -132,11 +150,11 @@ export default function OnboardingScreen() {
             style={[
               styles.primaryButton,
               styles.fullWidth,
-              (submitting || !name.trim() || (mode === 'join' && code.trim().length !== 6)) &&
+              (submitting || !name.trim() || (mode === 'create' && !householdName.trim()) || (mode === 'join' && code.trim().length !== 6)) &&
                 styles.disabledButton,
             ]}
             onPress={mode === 'create' ? handleCreate : handleJoin}
-            disabled={submitting || !name.trim() || (mode === 'join' && code.trim().length !== 6)}
+            disabled={submitting || !name.trim() || (mode === 'create' && !householdName.trim()) || (mode === 'join' && code.trim().length !== 6)}
           >
             {submitting ? (
               <ActivityIndicator color="#fff" />

@@ -12,15 +12,24 @@ import { HouseholdMember } from '@/lib/types';
 
 type Phase = 'loading' | 'onboarding' | 'pending' | 'rejected' | 'approved';
 
+export interface HouseholdOption {
+  id: string;
+  code: string;
+  name: string;
+  member: HouseholdMember;
+}
+
 interface HouseholdContextValue {
   phase: Phase;
-  household: { id: string; code: string } | null;
+  household: { id: string; code: string; name: string } | null;
   member: HouseholdMember | null;
   members: HouseholdMember[];
+  households: HouseholdOption[];
   errorMessage: string | null;
   clearError: () => void;
   retryIdentity: () => void;
-  createHousehold: (name: string) => Promise<void>;
+  switchHousehold: (householdId: string) => Promise<void>;
+  createHousehold: (name: string, householdName: string) => Promise<void>;
   joinHousehold: (code: string, name: string) => Promise<void>;
   respondToRequest: (memberId: string, approve: boolean) => Promise<void>;
   leaveHousehold: () => Promise<void>;
@@ -43,12 +52,14 @@ function friendlyMessage(error: unknown): string {
 
 export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>('loading');
-  const [household, setHousehold] = useState<{ id: string; code: string } | null>(null);
+  const [household, setHousehold] = useState<{ id: string; code: string; name: string } | null>(null);
   const [member, setMember] = useState<HouseholdMember | null>(null);
   const [members, setMembers] = useState<HouseholdMember[]>([]);
+  const [households, setHouseholds] = useState<HouseholdOption[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [identityAttempt, setIdentityAttempt] = useState(0);
   const userIdRef = useRef<string | null>(null);
+  const activeHouseholdIdRef = useRef<string | null>(null);
 
   const clearError = useCallback(() => setErrorMessage(null), []);
   const retryIdentity = useCallback(() => {
@@ -72,25 +83,30 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyMembership = useCallback(
-    async (row: HouseholdMember | null) => {
+    async (row: HouseholdMember | null, knownHousehold?: { id: string; code: string; name: string }) => {
       if (!row) {
         setPhase('onboarding');
         setHousehold(null);
         setMember(null);
         setMembers([]);
+        activeHouseholdIdRef.current = null;
         return;
       }
 
       setMember(row);
+      activeHouseholdIdRef.current = row.household_id;
 
-      const { data: householdRow, error: householdError } = await supabase
-        .from('households')
-        .select('id, code')
-        .eq('id', row.household_id)
-        .maybeSingle();
+      const { data: fetchedHousehold, error: householdError } = knownHousehold
+        ? { data: knownHousehold, error: null }
+        : await supabase
+            .from('households')
+            .select('id, code, name')
+            .eq('id', row.household_id)
+            .maybeSingle();
+      const householdRow = fetchedHousehold;
 
       if (householdError || !householdRow) {
-        console.error('load household failed', householdError);
+        setErrorMessage(friendlyMessage(householdError));
         setPhase('onboarding');
         setHousehold(null);
         setMember(null);
@@ -117,16 +133,43 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         .from('household_members')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false });
 
       if (error) {
         setErrorMessage(friendlyMessage(error));
         setPhase('onboarding');
         return;
       }
-      await applyMembership((data as HouseholdMember | null) ?? null);
+      const membershipRows = (data ?? []) as HouseholdMember[];
+      if (membershipRows.length === 0) {
+        setHouseholds([]);
+        await applyMembership(null);
+        return;
+      }
+
+      const { data: householdRows, error: householdsError } = await supabase
+        .from('households')
+        .select('id, code, name')
+        .in('id', membershipRows.map((row) => row.household_id));
+      if (householdsError) {
+        setErrorMessage(friendlyMessage(householdsError));
+        return;
+      }
+
+      const householdById = new Map((householdRows ?? []).map((row) => [row.id, row]));
+      const options = membershipRows
+        .map((memberRow) => {
+          const householdRow = householdById.get(memberRow.household_id);
+          return householdRow ? { id: householdRow.id, code: householdRow.code, name: householdRow.name, member: memberRow } : null;
+        })
+        .filter((option): option is HouseholdOption => option !== null);
+      setHouseholds(options);
+
+      const active =
+        options.find((option) => option.id === activeHouseholdIdRef.current) ??
+        options.find((option) => option.member.status === 'approved') ??
+        options[0];
+      await applyMembership(active?.member ?? null, active ? { id: active.id, code: active.code, name: active.name } : undefined);
     },
     [applyMembership],
   );
@@ -183,12 +226,13 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
   }, [household?.id, loadOwnMembership]);
 
   const createHousehold = useCallback(
-    async (name: string) => {
+    async (name: string, householdName: string) => {
       setErrorMessage(null);
       const userId = userIdRef.current;
       if (!userId) return;
       const { data, error } = await supabase.rpc('create_household', {
         p_name: name,
+        p_household_name: householdName,
       });
       if (error || !data || data.length === 0) {
         setErrorMessage(friendlyMessage(error));
@@ -204,8 +248,16 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         is_admin: true,
         created_at: new Date().toISOString(),
       });
-      setHousehold({ id: result.household_id, code: result.code });
+      setHousehold({ id: result.household_id, code: result.code, name: householdName });
       setPhase('approved');
+      activeHouseholdIdRef.current = result.household_id;
+      setHouseholds((current) => [
+        { id: result.household_id, code: result.code, name: householdName, member: {
+          id: result.member_id, household_id: result.household_id, user_id: userId, name,
+          status: 'approved', is_admin: true, created_at: new Date().toISOString(),
+        } },
+        ...current.filter((option) => option.id !== result.household_id),
+      ]);
       await loadMembers(result.household_id);
     },
     [loadMembers],
@@ -225,6 +277,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const result = data[0];
+      activeHouseholdIdRef.current = result.household_id;
       await applyMembership({
         id: result.member_id,
         household_id: result.household_id,
@@ -266,11 +319,20 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       setErrorMessage(GENERIC_ERROR);
       return;
     }
-    setPhase('onboarding');
-    setHousehold(null);
-    setMember(null);
-    setMembers([]);
-  }, [member]);
+    activeHouseholdIdRef.current = null;
+    const userId = userIdRef.current;
+    if (userId) await loadOwnMembership(userId);
+  }, [loadOwnMembership, member]);
+
+  const switchHousehold = useCallback(
+    async (householdId: string) => {
+      const selected = households.find((option) => option.id === householdId);
+      if (!selected) return;
+      setErrorMessage(null);
+      await applyMembership(selected.member, { id: selected.id, code: selected.code, name: selected.name });
+    },
+    [applyMembership, households],
+  );
 
   return (
     <HouseholdContext.Provider
@@ -279,9 +341,11 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
         household,
         member,
         members,
+        households,
         errorMessage,
         clearError,
         retryIdentity,
+        switchHousehold,
         createHousehold,
         joinHousehold,
         respondToRequest,

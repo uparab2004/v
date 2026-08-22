@@ -1,16 +1,4 @@
-ALTER TABLE maqadhi.households
-  ADD COLUMN IF NOT EXISTS owner_name text;
-
-UPDATE maqadhi.households h
-SET owner_name = m.name
-FROM (
-  SELECT DISTINCT ON (household_id) household_id, name
-  FROM maqadhi.household_members
-  WHERE is_admin = true
-  ORDER BY household_id, created_at
-) m
-WHERE h.id = m.household_id AND h.owner_name IS NULL;
-
+/* A user may manage or join more than one household. */
 CREATE OR REPLACE FUNCTION maqadhi.create_household(p_name text)
 RETURNS TABLE(household_id uuid, code text, member_id uuid, is_admin boolean, status text)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = maqadhi, public

@@ -1,12 +1,14 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { Crown, UserCheck, UserX, LogOut, Clock } from 'lucide-react-native';
+import { Crown, UserCheck, UserX, LogOut, Clock, Plus, LogIn } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { useHousehold } from '@/contexts/HouseholdContext';
 import { HouseholdMember } from '@/lib/types';
 import { colors, fontFamily, spacing, radius } from '@/lib/theme';
 
 export default function MembersScreen() {
-  const { household, member, members, respondToRequest, leaveHousehold, errorMessage } =
+  const { household, member, members, households, switchHousehold, respondToRequest, leaveHousehold, errorMessage } =
     useHousehold();
+  const router = useRouter();
 
   const approvedMembers = members.filter((m) => m.status === 'approved');
   const pendingMembers = members.filter((m) => m.status === 'pending');
@@ -104,6 +106,35 @@ export default function MembersScreen() {
         <Text style={styles.errorBanner}>{errorMessage}</Text>
       )}
 
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>عائلاتي ({households.length})</Text>
+        {households.map((option) => (
+          <TouchableOpacity
+            key={option.id}
+            style={[styles.householdOption, option.id === household?.id && styles.householdOptionActive]}
+            onPress={() => switchHousehold(option.id)}
+          >
+            <View>
+              <Text style={styles.householdOptionCode}>{option.name}</Text>
+              <Text style={styles.householdOptionStatus}>
+                {option.member.status === 'approved' ? `رمز الانضمام: ${option.code}` : 'طلب بانتظار الموافقة'}
+              </Text>
+            </View>
+            {option.id === household?.id && <Text style={styles.activeLabel}>العائلة الحالية</Text>}
+          </TouchableOpacity>
+        ))}
+        <View style={styles.familyActions}>
+          <TouchableOpacity style={styles.familyAction} onPress={() => router.push('/?mode=create')}>
+            <Plus color={colors.primary[700]} size={18} strokeWidth={2.5} />
+            <Text style={styles.familyActionText}>إنشاء عائلة</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.familyAction} onPress={() => router.push('/?mode=join')}>
+            <LogIn color={colors.primary[700]} size={18} strokeWidth={2.5} />
+            <Text style={styles.familyActionText}>انضمام لعائلة</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {isAdmin && pendingMembers.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
@@ -180,6 +211,21 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   section: { marginBottom: spacing(6) },
+  householdOption: {
+    backgroundColor: colors.neutral[0], borderRadius: radius.md, padding: spacing(3),
+    marginBottom: spacing(2), flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1, borderColor: colors.neutral[200],
+  },
+  householdOptionActive: { borderColor: colors.primary[500], backgroundColor: colors.primary[50] },
+  householdOptionCode: { fontFamily: fontFamily.bold, fontSize: 17, color: colors.neutral[900], letterSpacing: 1.5 },
+  householdOptionStatus: { fontFamily: fontFamily.regular, fontSize: 12, color: colors.neutral[500], marginTop: 2 },
+  activeLabel: { fontFamily: fontFamily.medium, fontSize: 12, color: colors.primary[700] },
+  familyActions: { flexDirection: 'row', gap: spacing(2), marginTop: spacing(1) },
+  familyAction: {
+    flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing(1),
+    borderWidth: 1, borderColor: colors.primary[300], borderRadius: radius.sm, paddingVertical: spacing(2),
+  },
+  familyActionText: { fontFamily: fontFamily.medium, fontSize: 13, color: colors.primary[700] },
   sectionTitle: {
     fontFamily: fontFamily.bold,
     fontSize: 16,

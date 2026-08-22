@@ -10,18 +10,21 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Plus, Check, RotateCcw, Trash2 } from 'lucide-react-native';
+import { Plus, Check, RotateCcw, Trash2, ChevronDown } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useHousehold } from '@/contexts/HouseholdContext';
 import { ShoppingItem, HouseholdMember } from '@/lib/types';
 import { colors, fontFamily, spacing, radius } from '@/lib/theme';
 
 export default function ListScreen() {
-  const { household, member, members, errorMessage, clearError } = useHousehold();
+  const { household, member, members, households, switchHousehold, errorMessage, clearError } = useHousehold();
+  const router = useRouter();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [newItem, setNewItem] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [showGroups, setShowGroups] = useState(false);
 
   const membersById = useMemo(() => {
     const map = new Map<string, HouseholdMember>();
@@ -197,13 +200,39 @@ export default function ListScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>قائمة التسوق</Text>
+        <TouchableOpacity style={styles.groupTrigger} onPress={() => setShowGroups((visible) => !visible)}>
+          <ChevronDown color={colors.primary[700]} size={18} strokeWidth={2.5} />
+          <View>
+            <Text style={styles.groupTriggerLabel}>المجموعة الحالية</Text>
+            <Text style={styles.groupTriggerName}>{household?.name ?? 'العائلة'}</Text>
+          </View>
+        </TouchableOpacity>
         {household && (
           <View style={styles.codeBadge}>
             <Text style={styles.codeBadgeText}>{household.code}</Text>
           </View>
         )}
       </View>
+
+      {showGroups && (
+        <View style={styles.groupsPanel}>
+          <Text style={styles.groupsTitle}>مجموعاتي</Text>
+          {households.map((option) => (
+            <TouchableOpacity
+              key={option.id}
+              style={[styles.groupRow, option.id === household?.id && styles.groupRowActive]}
+              onPress={async () => { await switchHousehold(option.id); setShowGroups(false); }}
+            >
+              <Text style={styles.groupRowName}>{option.name}</Text>
+              <Text style={styles.groupRowCode}>{option.code}</Text>
+            </TouchableOpacity>
+          ))}
+          <View style={styles.groupsActions}>
+            <TouchableOpacity onPress={() => router.push('/?mode=join')}><Text style={styles.groupsLink}>+ الانضمام لعائلة أخرى</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/?mode=create')}><Text style={styles.groupsLink}>+ إنشاء عائلة جديدة</Text></TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <View style={styles.inputBar}>
         <TextInput
@@ -278,6 +307,17 @@ const styles = StyleSheet.create({
     paddingBottom: spacing(2),
     backgroundColor: colors.neutral[0],
   },
+  groupTrigger: { flexDirection: 'row', alignItems: 'center', gap: spacing(1), flex: 1 },
+  groupTriggerLabel: { fontFamily: fontFamily.regular, fontSize: 11, color: colors.neutral[500] },
+  groupTriggerName: { fontFamily: fontFamily.bold, fontSize: 20, color: colors.neutral[900] },
+  groupsPanel: { marginHorizontal: spacing(4), marginBottom: spacing(3), backgroundColor: colors.neutral[0], borderRadius: radius.md, padding: spacing(3), borderWidth: 1, borderColor: colors.neutral[200] },
+  groupsTitle: { fontFamily: fontFamily.bold, fontSize: 16, color: colors.neutral[800], marginBottom: spacing(2) },
+  groupRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing(2), paddingHorizontal: spacing(2), borderRadius: radius.sm },
+  groupRowActive: { backgroundColor: colors.primary[50] },
+  groupRowName: { fontFamily: fontFamily.medium, fontSize: 16, color: colors.neutral[900] },
+  groupRowCode: { fontFamily: fontFamily.bold, fontSize: 13, color: colors.primary[700], letterSpacing: 1 },
+  groupsActions: { marginTop: spacing(2), paddingTop: spacing(2), borderTopWidth: 1, borderTopColor: colors.neutral[200], gap: spacing(2) },
+  groupsLink: { fontFamily: fontFamily.medium, fontSize: 14, color: colors.primary[700] },
   headerTitle: {
     fontFamily: fontFamily.bold,
     fontSize: 28,
