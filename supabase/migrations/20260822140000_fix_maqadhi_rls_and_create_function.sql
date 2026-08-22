@@ -29,6 +29,8 @@ DROP POLICY IF EXISTS "read household members" ON maqadhi.household_members;
 CREATE POLICY "read household members" ON maqadhi.household_members FOR SELECT TO authenticated
   USING (user_id = auth.uid() OR maqadhi.is_approved_member(household_id));
 
+DROP POLICY IF EXISTS "read members in own household" ON maqadhi.household_members;
+
 DROP POLICY IF EXISTS "read household items" ON maqadhi.shopping_items;
 CREATE POLICY "read household items" ON maqadhi.shopping_items FOR SELECT TO authenticated
   USING (maqadhi.is_approved_member(household_id));

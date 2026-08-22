@@ -65,7 +65,7 @@ export function HouseholdProvider({ children }: { children: React.ReactNode }) {
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('load members failed', error);
+      setErrorMessage(friendlyMessage(error));
       return;
     }
     setMembers((data ?? []) as HouseholdMember[]);
