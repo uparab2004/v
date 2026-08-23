@@ -115,6 +115,11 @@ export default function MaqadhiHome() {
 
   const removeItem = async (id: string) => {
     if (!activeGroup) return;
+    const item = items.find((entry) => entry.id === id);
+    if (!item || (activeGroup.manager !== currentUser && item.addedBy !== currentUser)) {
+      setNotice('ليس لديك صلاحية حذف هذا الغرض.');
+      return;
+    }
     const { error } = await supabase.from('maqadhi_v2_items').delete().eq('id', id).eq('group_id', activeGroup.id);
     if (error) {
       setNotice('تعذر حذف الغرض. حاول مرة أخرى.');
@@ -448,13 +453,13 @@ export default function MaqadhiHome() {
 
         <Text style={styles.sectionTitle}>المطلوب شراؤه ({wanted.length})</Text>
         {wanted.map((item) => (
-          <ShoppingRow key={item.id} item={item} currentUser={currentUser} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
+          <ShoppingRow key={item.id} item={item} currentUser={currentUser} canManage={isCurrentUserManager} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
         ))}
 
         {bought.length > 0 && <View style={styles.divider} />}
         {bought.length > 0 && <Text style={styles.sectionTitle}>تم شراؤه ({bought.length})</Text>}
         {bought.map((item) => (
-          <ShoppingRow key={item.id} item={item} currentUser={currentUser} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
+          <ShoppingRow key={item.id} item={item} currentUser={currentUser} canManage={isCurrentUserManager} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
         ))}
       </ScrollView>
 
@@ -543,7 +548,7 @@ export default function MaqadhiHome() {
   );
 }
 
-function ShoppingRow({ item, currentUser, onToggle, onQuantity, onDelete, editingId, editedName, onEdit, onEditedName, onSave }: { item: Item; currentUser: string; onToggle: (id: string) => void; onQuantity: (id: string, amount: number) => void; onDelete: (id: string) => void; editingId: string | null; editedName: string; onEdit: (item: Item) => void; onEditedName: (name: string) => void; onSave: () => void }) {
+function ShoppingRow({ item, currentUser, canManage, onToggle, onQuantity, onDelete, editingId, editedName, onEdit, onEditedName, onSave }: { item: Item; currentUser: string; canManage: boolean; onToggle: (id: string) => void; onQuantity: (id: string, amount: number) => void; onDelete: (id: string) => void; editingId: string | null; editedName: string; onEdit: (item: Item) => void; onEditedName: (name: string) => void; onSave: () => void }) {
   const isEditing = editingId === item.id;
   const canEdit = item.addedBy === currentUser;
   return (
@@ -564,7 +569,7 @@ function ShoppingRow({ item, currentUser, onToggle, onQuantity, onDelete, editin
         <TouchableOpacity style={styles.quantityButton} onPress={() => onQuantity(item.id, -1)}><Minus size={17} color={colors.primary} /></TouchableOpacity>
       </View>
       {!isEditing && <View style={styles.addedBy}><Text numberOfLines={1} style={styles.meta}>{item.purchasedBy ? `تم شراؤه: ${item.purchasedBy}` : `أضافه: ${item.addedBy}`}</Text>{canEdit && <TouchableOpacity onPress={() => onEdit(item)}><Text style={styles.editText}>تعديل</Text></TouchableOpacity>}</View>}
-      {item.purchased && <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(item.id)}><X size={18} color={colors.danger} /></TouchableOpacity>}
+      {item.purchased && (canManage || canEdit) && <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(item.id)}><X size={18} color={colors.danger} /></TouchableOpacity>}
     </View>
   );
 }
