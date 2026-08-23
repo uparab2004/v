@@ -50,37 +50,88 @@ export default function MaqadhiHome() {
   const inputRef = useRef<TextInput>(null);
   const currentUser = memberName.trim();
 
-  const addItem = () => {
+  const refreshItems = async (groupId: string) => {
+    const { data, error } = await supabase
+      .from('maqadhi_v2_items')
+      .select('id, name, quantity, added_by, purchased, purchased_by')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false });
+    if (error || !data) return;
+    setItems(data.map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      addedBy: item.added_by,
+      purchased: item.purchased,
+      purchasedBy: item.purchased_by ?? undefined,
+    })));
+  };
+
+  const addItem = async () => {
     const name = newItem.trim();
-    if (!name || !currentUser) return;
-    setItems((current) => [
-      { id: String(Date.now()), name, quantity: 1, addedBy: currentUser, purchased: false },
-      ...current,
-    ]);
+    if (!name || !currentUser || !activeGroup) return;
+    const { error } = await supabase.from('maqadhi_v2_items').insert({
+      group_id: activeGroup.id,
+      name,
+      quantity: 1,
+      added_by: currentUser,
+      purchased: false,
+    });
+    if (error) {
+      setNotice('تعذر إضافة الغرض. حاول مرة أخرى.');
+      return;
+    }
     setNewItem('');
     requestAnimationFrame(() => inputRef.current?.focus());
+    await refreshItems(activeGroup.id);
   };
 
-  const changeQuantity = (id: string, amount: number) => {
-    setItems((current) => current.map((item) =>
-      item.id === id ? { ...item, quantity: Math.max(1, item.quantity + amount) } : item,
-    ));
+  const changeQuantity = async (id: string, amount: number) => {
+    if (!activeGroup) return;
+    const item = items.find((entry) => entry.id === id);
+    if (!item) return;
+    const { error } = await supabase.from('maqadhi_v2_items').update({ quantity: Math.max(1, item.quantity + amount) }).eq('id', id).eq('group_id', activeGroup.id);
+    if (error) {
+      setNotice('تعذر تعديل الكمية. حاول مرة أخرى.');
+      return;
+    }
+    await refreshItems(activeGroup.id);
   };
 
-  const togglePurchased = (id: string) => {
-    setItems((current) => current.map((item) =>
-      item.id === id
-        ? { ...item, purchased: !item.purchased, purchasedBy: !item.purchased ? currentUser : undefined }
-        : item,
-    ));
+  const togglePurchased = async (id: string) => {
+    if (!activeGroup) return;
+    const item = items.find((entry) => entry.id === id);
+    if (!item) return;
+    const { error } = await supabase.from('maqadhi_v2_items').update({
+      purchased: !item.purchased,
+      purchased_by: item.purchased ? null : currentUser,
+    }).eq('id', id).eq('group_id', activeGroup.id);
+    if (error) {
+      setNotice('تعذر نقل الغرض. حاول مرة أخرى.');
+      return;
+    }
+    await refreshItems(activeGroup.id);
   };
 
-  const removeItem = (id: string) => setItems((current) => current.filter((item) => item.id !== id));
-  const saveItemName = () => {
+  const removeItem = async (id: string) => {
+    if (!activeGroup) return;
+    const { error } = await supabase.from('maqadhi_v2_items').delete().eq('id', id).eq('group_id', activeGroup.id);
+    if (error) {
+      setNotice('تعذر حذف الغرض. حاول مرة أخرى.');
+      return;
+    }
+    await refreshItems(activeGroup.id);
+  };
+  const saveItemName = async () => {
     const name = editedName.trim();
-    if (!editingId || !name) return;
-    setItems((current) => current.map((item) => item.id === editingId ? { ...item, name } : item));
+    if (!editingId || !name || !activeGroup) return;
+    const { error } = await supabase.from('maqadhi_v2_items').update({ name }).eq('id', editingId).eq('group_id', activeGroup.id);
+    if (error) {
+      setNotice('تعذر تعديل الغرض. حاول مرة أخرى.');
+      return;
+    }
     setEditingId(null);
+    await refreshItems(activeGroup.id);
   };
   const refreshMembers = async (groupId: string) => {
     const { data, error } = await supabase.from('maqadhi_v2_members').select('name, role, status').eq('group_id', groupId);
@@ -102,7 +153,11 @@ export default function MaqadhiHome() {
   useEffect(() => {
     if (!activeGroup) return;
     void refreshMembers(activeGroup.id);
-    const timer = setInterval(() => void refreshMembers(activeGroup.id), 4000);
+    void refreshItems(activeGroup.id);
+    const timer = setInterval(() => {
+      void refreshMembers(activeGroup.id);
+      void refreshItems(activeGroup.id);
+    }, 3000);
     return () => clearInterval(timer);
   }, [activeGroup?.id]);
 
