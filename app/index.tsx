@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DraggableFlatList from 'react-native-draggable-flatlist';
+import { NestableDraggableFlatList, NestableScrollContainer } from 'react-native-draggable-flatlist';
 import {
   Alert,
   I18nManager,
   Modal,
   Pressable,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -478,7 +477,7 @@ export default function MaqadhiHome() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.groupTrigger} onPress={() => setGroupsVisible(true)}>
             <ChevronDown color={colors.text} size={19} />
@@ -534,10 +533,9 @@ export default function MaqadhiHome() {
         <Text style={styles.hint}>اضغط على الغرض لنقله إلى قسم «تم شراؤه»، واضغط مطولًا لسحبه وترتيبه</Text>
 
         <Text style={styles.sectionTitle}>المطلوب شراؤه ({wanted.length})</Text>
-        <DraggableFlatList
+        <NestableDraggableFlatList
           data={wanted}
           keyExtractor={(item) => item.id}
-          scrollEnabled={false}
           activationDistance={12}
           onDragEnd={({ data }) => saveWantedOrder(data)}
           renderItem={({ item, drag, isActive }) => <ShoppingRow item={item} currentUser={currentUser} canManage={isCurrentUserManager} onToggle={togglePurchased} onLongPress={drag} isDragging={isActive} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />}
@@ -548,7 +546,7 @@ export default function MaqadhiHome() {
         {bought.map((item) => (
           <ShoppingRow key={item.id} item={item} currentUser={currentUser} canManage={isCurrentUserManager} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
         ))}
-      </ScrollView>
+      </NestableScrollContainer>
 
       <Modal visible={groupsVisible} transparent animationType="fade" onRequestClose={() => setGroupsVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setGroupsVisible(false)}>
