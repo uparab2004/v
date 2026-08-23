@@ -130,6 +130,16 @@ export default function MaqadhiHome() {
     }
   };
 
+  const deleteCurrentGroup = () => {
+    if (!activeGroup) return;
+    const remaining = groupList.filter((group) => group.id !== activeGroup.id);
+    setGroupList(remaining);
+    setActiveGroup(remaining[0] ?? null);
+    setItems([]);
+    setExitVisible(false);
+    setNotice('تم حذف المجموعة.');
+  };
+
   const acceptRequest = (name: string) => {
     if (!activeGroup) return;
     const updated = { ...activeGroup, pending: activeGroup.pending.filter((entry) => entry !== name), members: [...activeGroup.members, name] };
@@ -171,6 +181,8 @@ export default function MaqadhiHome() {
       </View>
     );
   }
+
+  const otherMembers = activeGroup.members.filter((name) => name !== 'محمود');
 
   return (
     <View style={styles.screen}>
@@ -308,9 +320,10 @@ export default function MaqadhiHome() {
       <Modal visible={exitVisible} transparent animationType="fade" onRequestClose={() => setExitVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setExitVisible(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>تعيين مدير بديل</Text>
-            <Text style={styles.modalHint}>اختر مديرًا للمجموعة قبل مغادرتك.</Text>
-            {activeGroup.members.filter((name) => name !== 'محمود').map((name) => <TouchableOpacity key={name} style={styles.managerChoice} onPress={() => leaveGroup(name)}><Text style={styles.memberName}>{name}</Text><Text style={styles.chooseText}>تعيين مدير</Text></TouchableOpacity>)}
+            <Text style={styles.modalTitle}>{otherMembers.length ? 'تعيين مدير بديل' : 'مغادرة المجموعة'}</Text>
+            {otherMembers.length ? <Text style={styles.modalHint}>اختر مديرًا للمجموعة قبل مغادرتك.</Text> : <Text style={styles.modalHint}>أنت العضو الوحيد. ستُحذف المجموعة عند مغادرتك.</Text>}
+            {otherMembers.map((name) => <TouchableOpacity key={name} style={styles.managerChoice} onPress={() => leaveGroup(name)}><Text style={styles.memberName}>{name}</Text><Text style={styles.chooseText}>تعيين مدير</Text></TouchableOpacity>)}
+            {!otherMembers.length && <TouchableOpacity style={styles.deleteGroupButton} onPress={deleteCurrentGroup}><Text style={styles.deleteGroupText}>حذف المجموعة والمغادرة</Text></TouchableOpacity>}
             <TouchableOpacity onPress={() => setExitVisible(false)}><Text style={styles.closeText}>إلغاء</Text></TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -338,9 +351,9 @@ function ShoppingRow({ item, onToggle, onQuantity, onDelete, editingId, editedNa
       </TouchableOpacity>
       )}
       <View style={styles.quantity}>
-        <TouchableOpacity style={styles.quantityButton} onPress={() => onQuantity(item.id, -1)}><Minus size={17} color={colors.primary} /></TouchableOpacity>
-        <Text style={styles.quantityValue}>{item.quantity}</Text>
         <TouchableOpacity style={styles.quantityButton} onPress={() => onQuantity(item.id, 1)}><Plus size={17} color={colors.primary} /></TouchableOpacity>
+        <Text style={styles.quantityValue}>{item.quantity}</Text>
+        <TouchableOpacity style={styles.quantityButton} onPress={() => onQuantity(item.id, -1)}><Minus size={17} color={colors.primary} /></TouchableOpacity>
       </View>
       {item.purchased && <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(item.id)}><X size={18} color={colors.danger} /></TouchableOpacity>}
     </View>
@@ -356,5 +369,5 @@ const styles = StyleSheet.create({
   itemRow: { minHeight: 67, borderWidth: 1, borderColor: colors.border, borderRadius: 12, marginBottom: 9, paddingVertical: 8, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff' }, purchasedRow: { backgroundColor: colors.gray, borderColor: '#e5e8e6' }, itemTap: { flex: 1 }, itemDetails: { gap: 4 }, itemName: { color: colors.text, fontWeight: '800', fontSize: 16 }, purchasedName: { color: '#7c8580', textDecorationLine: 'line-through' }, metaLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, meta: { color: colors.muted, fontSize: 11 }, editText: { color: colors.primary, fontSize: 11, fontWeight: '800' }, inlineEdit: { borderWidth: 1, borderColor: '#bde3cb', borderRadius: 8, height: 33, paddingHorizontal: 8, color: colors.text, fontSize: 15 }, editButton: { alignSelf: 'flex-start', marginTop: 5, backgroundColor: colors.primaryLight, borderRadius: 7, paddingVertical: 4, paddingHorizontal: 12 }, editButtonText: { color: colors.primary, fontWeight: '800', fontSize: 12 }, quantity: { direction: 'ltr', flexDirection: 'row', alignItems: 'center', gap: 6 }, quantityButton: { width: 29, height: 29, borderRadius: 7, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' }, quantityValue: { color: colors.text, fontWeight: '800', fontSize: 16, minWidth: 17, textAlign: 'center' }, deleteButton: { padding: 4 }, divider: { height: 1, backgroundColor: '#e8ebe9', marginVertical: 18 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', padding: 16 }, sheet: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 11 }, modalTitle: { color: colors.text, fontWeight: '800', fontSize: 21, textAlign: 'center', marginBottom: 6 }, modalInput: { borderWidth: 1, borderColor: '#d9dedb', borderRadius: 12, height: 50, paddingHorizontal: 14, color: colors.text, fontSize: 16 }, modalHint: { color: colors.muted, textAlign: 'center', lineHeight: 21 }, shareCodeText: { color: colors.primary, textAlign: 'center', fontWeight: '800', fontSize: 18, letterSpacing: 1.2 }, groupOption: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, activeGroup: { borderColor: colors.primary, backgroundColor: colors.primaryLight }, groupOptionName: { color: colors.text, fontSize: 16, fontWeight: '800' }, groupOptionCode: { color: colors.muted, marginTop: 3, fontSize: 12 }, primaryModalButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginTop: 6 }, primaryModalText: { color: '#fff', fontWeight: '800', fontSize: 16 }, secondaryModalButton: { borderColor: '#d6ded9', borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, secondaryModalText: { color: colors.text, fontWeight: '800', fontSize: 16 }, closeText: { color: colors.muted, textAlign: 'center', fontWeight: '700', paddingTop: 6, paddingBottom: 2 },
   requestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 13 }, requestName: { color: colors.text, fontWeight: '700', fontSize: 16 }, requestButtons: { flexDirection: 'row', gap: 8 }, acceptButton: { backgroundColor: colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 9 }, acceptText: { color: '#fff', fontWeight: '800' }, rejectButton: { borderColor: '#e3b9b9', borderWidth: 1, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 9 }, rejectText: { color: colors.danger, fontWeight: '800' },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 12 }, memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff3dd', alignItems: 'center', justifyContent: 'center' }, memberAvatarText: { color: '#b57814', fontSize: 17, fontWeight: '800' }, memberName: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 }, managerBadge: { color: '#a66b17', backgroundColor: '#fff3dd', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 10, fontSize: 12, fontWeight: '800' }, managerChoice: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#d7e5db', borderRadius: 10, padding: 12, gap: 8 }, chooseText: { color: colors.primary, fontWeight: '800', fontSize: 13 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 12 }, memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff3dd', alignItems: 'center', justifyContent: 'center' }, memberAvatarText: { color: '#b57814', fontSize: 17, fontWeight: '800' }, memberName: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 }, managerBadge: { color: '#a66b17', backgroundColor: '#fff3dd', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 10, fontSize: 12, fontWeight: '800' }, managerChoice: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#d7e5db', borderRadius: 10, padding: 12, gap: 8 }, chooseText: { color: colors.primary, fontWeight: '800', fontSize: 13 }, deleteGroupButton: { backgroundColor: '#fff0f0', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 }, deleteGroupText: { color: colors.danger, fontWeight: '800', fontSize: 15 },
 });
