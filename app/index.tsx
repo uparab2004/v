@@ -40,6 +40,7 @@ export default function MaqadhiHome() {
   const [groupName, setGroupName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [memberName, setMemberName] = useState('');
+  const [pendingJoin, setPendingJoin] = useState<{ id: string; name: string; code: string; ownerName: string } | null>(null);
   const [actionError, setActionError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState('');
@@ -95,6 +96,22 @@ export default function MaqadhiHome() {
     const timer = setInterval(() => void refreshMembers(activeGroup.id), 4000);
     return () => clearInterval(timer);
   }, [activeGroup?.id]);
+
+  useEffect(() => {
+    if (!pendingJoin || !currentUser) return;
+    const checkApproval = async () => {
+      const { data } = await supabase.from('maqadhi_v2_members').select('status').eq('group_id', pendingJoin.id).eq('name', currentUser).maybeSingle();
+      if (data?.status !== 'approved') return;
+      const group: Group = { id: pendingJoin.id, name: pendingJoin.name, code: pendingJoin.code, members: [], pending: [], manager: pendingJoin.ownerName };
+      setGroupList((current) => current.some((entry) => entry.id === group.id) ? current : [group, ...current]);
+      setActiveGroup(group);
+      setPendingJoin(null);
+      await refreshMembers(group.id);
+    };
+    void checkApproval();
+    const timer = setInterval(() => void checkApproval(), 4000);
+    return () => clearInterval(timer);
+  }, [pendingJoin?.id, currentUser]);
 
   const createGroup = async () => {
     const name = groupName.trim();
@@ -152,17 +169,22 @@ export default function MaqadhiHome() {
       setNotice('');
       await refreshMembers(group.id);
     } else if (existing?.status === 'pending') {
-      setActionError('طلب انضمامك ما زال بانتظار موافقة المدير.');
+      setPendingJoin({ id: remoteGroup.id, name: remoteGroup.name, code: remoteGroup.code, ownerName: remoteGroup.owner_name });
+      setJoinCode('');
+      setGroupAction(null);
+      setGroupsVisible(false);
+      setActionError('');
     } else {
       const { error: requestError } = await supabase.from('maqadhi_v2_members').insert({ group_id: remoteGroup.id, name, role: 'member', status: 'pending' });
       if (requestError) {
         setActionError('تعذر إرسال طلب الانضمام. حاول مرة أخرى.');
         return;
       }
+      setPendingJoin({ id: remoteGroup.id, name: remoteGroup.name, code: remoteGroup.code, ownerName: remoteGroup.owner_name });
       setJoinCode('');
       setGroupAction(null);
       setGroupsVisible(false);
-      setActionError('تم إرسال طلب الانضمام إلى مدير المجموعة.');
+      setActionError('');
     }
   };
   const leaveGroup = (nextManager: string) => {
@@ -215,6 +237,20 @@ export default function MaqadhiHome() {
   const requestedCount = activeGroup?.pending.length ?? 0;
   const wanted = items.filter((item) => !item.purchased);
   const bought = items.filter((item) => item.purchased);
+
+  if (pendingJoin) {
+    return (
+      <View style={styles.welcomeScreen}>
+        <View style={styles.waitingCard}>
+          <Text style={styles.waitingIcon}>◷</Text>
+          <Text style={styles.welcomeTitle}>بانتظار الموافقة</Text>
+          <Text style={styles.welcomeText}>تم إرسال طلب انضمامك إلى مجموعة «{pendingJoin.name}» برمز {pendingJoin.code}.</Text>
+          <Text style={styles.waitingText}>سيتم فتح المجموعة تلقائيًا بعد اعتماد المدير لطلبك.</Text>
+          <TouchableOpacity style={styles.welcomeSecondary} onPress={() => setPendingJoin(null)}><Text style={styles.welcomeSecondaryText}>العودة إلى الصفحة الرئيسية</Text></TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (!activeGroup) {
     return (
@@ -423,7 +459,7 @@ function ShoppingRow({ item, currentUser, onToggle, onQuantity, onDelete, editin
 
 const colors = { primary: '#159447', primaryLight: '#edfaf1', text: '#202124', muted: '#65706a', placeholder: '#9aa19d', border: '#e3e7e4', danger: '#ca4848', gray: '#f1f3f2' };
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' }, content: { padding: 20, paddingTop: 30, paddingBottom: 52 }, welcomeScreen: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', padding: 28 }, welcomeContent: { alignItems: 'stretch' }, welcomeTitle: { color: colors.text, fontSize: 34, fontWeight: '800', textAlign: 'center' }, welcomeText: { color: colors.muted, textAlign: 'center', fontSize: 16, lineHeight: 25, marginTop: 12, marginBottom: 38 }, welcomePrimary: { height: 58, backgroundColor: colors.primary, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, welcomePrimaryText: { color: '#fff', fontSize: 18, fontWeight: '800' }, welcomeSecondary: { height: 58, borderWidth: 1, borderColor: '#cde5d6', borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 12 }, welcomeSecondaryText: { color: colors.primary, fontSize: 18, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: '#fff' }, content: { padding: 20, paddingTop: 30, paddingBottom: 52 }, welcomeScreen: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', padding: 28 }, welcomeContent: { alignItems: 'stretch' }, waitingCard: { alignItems: 'stretch', borderWidth: 1, borderColor: '#dce9e0', borderRadius: 22, padding: 24, backgroundColor: '#fff' }, waitingIcon: { color: colors.primary, fontSize: 54, textAlign: 'center', marginBottom: 6 }, welcomeTitle: { color: colors.text, fontSize: 34, fontWeight: '800', textAlign: 'center' }, welcomeText: { color: colors.muted, textAlign: 'center', fontSize: 16, lineHeight: 25, marginTop: 12, marginBottom: 24 }, waitingText: { color: colors.primary, textAlign: 'center', fontSize: 14, lineHeight: 22, fontWeight: '700' }, welcomePrimary: { height: 58, backgroundColor: colors.primary, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, welcomePrimaryText: { color: '#fff', fontSize: 18, fontWeight: '800' }, welcomeSecondary: { height: 58, borderWidth: 1, borderColor: '#cde5d6', borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 }, welcomeSecondaryText: { color: colors.primary, fontSize: 18, fontWeight: '800' },
   topBar: { gap: 14, borderBottomWidth: 1, borderBottomColor: '#eff1ef', paddingBottom: 15 }, groupTrigger: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 7 }, groupOverline: { color: colors.muted, fontSize: 12 }, groupName: { color: colors.text, fontWeight: '800', fontSize: 24 }, topActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }, roundAction: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingHorizontal: 11, paddingVertical: 8, borderRadius: 18, backgroundColor: '#f5f7f6' }, actionText: { color: colors.muted, fontSize: 13, fontWeight: '700' }, requestsAction: { backgroundColor: '#fff1f1' }, requestsText: { color: '#b84a4a', fontWeight: '700', fontSize: 13 }, exitAction: { flexDirection: 'row', gap: 4, alignItems: 'center', paddingHorizontal: 7 }, exitText: { color: colors.danger, fontWeight: '700', fontSize: 13 },
   code: { marginTop: 11, color: colors.primary, fontSize: 14, fontWeight: '700' }, codeValue: { letterSpacing: 1.3 }, notice: { marginTop: 9, color: colors.primary, fontWeight: '700', fontSize: 12, textAlign: 'right' }, addRow: { flexDirection: 'row-reverse', gap: 10, marginTop: 25, alignItems: 'center' }, input: { flex: 1, borderWidth: 1, borderColor: '#d9dedb', borderRadius: 13, height: 48, paddingHorizontal: 15, color: colors.text, fontSize: 16 }, addButton: { height: 48, paddingHorizontal: 22, borderRadius: 13, backgroundColor: colors.primary, justifyContent: 'center' }, addButtonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   shareButton: { marginTop: 12, height: 48, borderRadius: 13, backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: '#c8ecd5', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, shareText: { color: '#207144', fontWeight: '700', fontSize: 15 }, hint: { textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 13, marginBottom: 21 }, sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '800', marginBottom: 10 },
