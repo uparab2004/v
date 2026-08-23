@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "مقاضي",
+    "slug": "maqadhi-v2",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "maqadhi",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router"],
+    "experiments": { "typedRoutes": true }
+  }
+}
