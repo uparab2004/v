@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   I18nManager,
@@ -27,10 +28,14 @@ type Item = {
 };
 
 type Group = { id: string; name: string; code: string; members: string[]; pending: string[]; manager: string };
+type PendingJoin = { id: string; name: string; code: string; ownerName: string };
+type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null };
+const SESSION_KEY = '@maqadhi/session-v1';
 
 export default function MaqadhiHome() {
   const [groupList, setGroupList] = useState<Group[]>([]);
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [newItem, setNewItem] = useState('');
   const [groupsVisible, setGroupsVisible] = useState(false);
@@ -43,13 +48,47 @@ export default function MaqadhiHome() {
   const [groupName, setGroupName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [memberName, setMemberName] = useState('');
-  const [pendingJoin, setPendingJoin] = useState<{ id: string; name: string; code: string; ownerName: string } | null>(null);
+  const [pendingJoin, setPendingJoin] = useState<PendingJoin | null>(null);
   const [actionError, setActionError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState('');
   const [notice, setNotice] = useState('');
   const inputRef = useRef<TextInput>(null);
   const currentUser = memberName.trim();
+
+  useEffect(() => {
+    let active = true;
+    const restoreSession = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(SESSION_KEY);
+        if (!stored || !active) return;
+        const session = JSON.parse(stored) as SavedSession;
+        const groups = Array.isArray(session.groups) ? session.groups : [];
+        setMemberName(typeof session.memberName === 'string' ? session.memberName : '');
+        setGroupList(groups);
+        setPendingJoin(session.pendingJoin ?? null);
+        const restoredGroup = groups.find((group) => group.id === session.activeGroupId);
+        if (restoredGroup) setActiveGroup(restoredGroup);
+      } catch {
+        // تجاهل أي بيانات محفوظة تالفة وفتح شاشة البداية.
+      } finally {
+        if (active) setSessionReady(true);
+      }
+    };
+    void restoreSession();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    const session: SavedSession = {
+      memberName,
+      groups: groupList,
+      activeGroupId: activeGroup?.id ?? null,
+      pendingJoin,
+    };
+    void AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  }, [sessionReady, memberName, groupList, activeGroup?.id, pendingJoin]);
 
   const refreshItems = async (groupId: string) => {
     const { data, error } = await supabase
@@ -355,6 +394,10 @@ export default function MaqadhiHome() {
   const requestedCount = activeGroup?.pending.length ?? 0;
   const wanted = items.filter((item) => !item.purchased);
   const bought = items.filter((item) => item.purchased);
+
+  if (!sessionReady) {
+    return <View style={styles.welcomeScreen}><Text style={styles.welcomeText}>جار استعادة حسابك...</Text></View>;
+  }
 
   if (pendingJoin) {
     return (
