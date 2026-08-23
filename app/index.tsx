@@ -33,7 +33,7 @@ type Item = {
 
 type Group = { id: string; name: string; code: string; members: string[]; pending: string[]; manager: string };
 type PendingJoin = { id: string; name: string; code: string; ownerName: string };
-type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null };
+type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null; personalOrders?: Record<string, string[]> };
 const SESSION_KEY = '@maqadhi/session-v1';
 
 export default function MaqadhiHome() {
@@ -41,6 +41,7 @@ export default function MaqadhiHome() {
   const [groupList, setGroupList] = useState<Group[]>([]);
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const [personalOrders, setPersonalOrders] = useState<Record<string, string[]>>({});
   const [items, setItems] = useState<Item[]>([]);
   const [newItem, setNewItem] = useState('');
   const [groupsVisible, setGroupsVisible] = useState(false);
@@ -72,6 +73,7 @@ export default function MaqadhiHome() {
         setMemberName(typeof session.memberName === 'string' ? session.memberName : '');
         setGroupList(groups);
         setPendingJoin(session.pendingJoin ?? null);
+        setPersonalOrders(session.personalOrders && typeof session.personalOrders === 'object' ? session.personalOrders : {});
         const restoredGroup = groups.find((group) => group.id === session.activeGroupId);
         if (restoredGroup) setActiveGroup(restoredGroup);
       } catch {
@@ -91,9 +93,10 @@ export default function MaqadhiHome() {
       groups: groupList,
       activeGroupId: activeGroup?.id ?? null,
       pendingJoin,
+      personalOrders,
     };
     void AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  }, [sessionReady, memberName, groupList, activeGroup?.id, pendingJoin]);
+  }, [sessionReady, memberName, groupList, activeGroup?.id, pendingJoin, personalOrders]);
 
   const refreshItems = async (groupId: string) => {
     const { data, error } = await supabase
@@ -102,7 +105,7 @@ export default function MaqadhiHome() {
       .eq('group_id', groupId)
       .order('created_at', { ascending: true });
     if (error || !data) return;
-    setItems(data.map((item) => ({
+    const mappedItems = data.map((item) => ({
       id: item.id,
       name: item.name,
       quantity: item.quantity,
@@ -110,7 +113,18 @@ export default function MaqadhiHome() {
       purchased: item.purchased,
       purchasedBy: item.purchased_by ?? undefined,
       createdAt: item.created_at,
-    })));
+    }));
+    const order = personalOrders[groupId] ?? [];
+    const positions = new Map(order.map((id, index) => [id, index]));
+    mappedItems.sort((first, second) => {
+      const firstPosition = positions.get(first.id);
+      const secondPosition = positions.get(second.id);
+      if (firstPosition === undefined && secondPosition === undefined) return 0;
+      if (firstPosition === undefined) return 1;
+      if (secondPosition === undefined) return -1;
+      return firstPosition - secondPosition;
+    });
+    setItems(mappedItems);
   };
 
   const addItem = async () => {
@@ -185,19 +199,11 @@ export default function MaqadhiHome() {
     await refreshItems(activeGroup.id);
   };
 
-  const saveWantedOrder = async (orderedItems: Item[]) => {
+  const saveWantedOrder = (orderedItems: Item[]) => {
     if (!activeGroup) return;
-    const oldestTime = Math.min(...orderedItems.map((item) => new Date(item.createdAt).getTime()));
+    const groupId = activeGroup.id;
     setItems((current) => [...orderedItems, ...current.filter((item) => item.purchased)]);
-    const results = await Promise.all(orderedItems.map((item, index) => supabase
-      .from('maqadhi_v2_items')
-      .update({ created_at: new Date(oldestTime + index * 1000).toISOString() })
-      .eq('id', item.id)
-      .eq('group_id', activeGroup.id)));
-    if (results.some((result) => result.error)) {
-      setNotice('تعذر حفظ ترتيب الأغراض. حاول مرة أخرى.');
-      await refreshItems(activeGroup.id);
-    }
+    setPersonalOrders((current) => ({ ...current, [groupId]: orderedItems.map((item) => item.id) }));
   };
   const refreshMembers = async (groupId: string) => {
     const { data, error } = await supabase.from('maqadhi_v2_members').select('name, role, status').eq('group_id', groupId);
@@ -225,7 +231,7 @@ export default function MaqadhiHome() {
       void refreshItems(activeGroup.id);
     }, 3000);
     return () => clearInterval(timer);
-  }, [activeGroup?.id]);
+  }, [activeGroup?.id, personalOrders]);
 
   useEffect(() => {
     if (!pendingJoin || !currentUser) return;
@@ -533,7 +539,7 @@ export default function MaqadhiHome() {
           keyExtractor={(item) => item.id}
           scrollEnabled={false}
           activationDistance={12}
-          onDragEnd={({ data }) => void saveWantedOrder(data)}
+          onDragEnd={({ data }) => saveWantedOrder(data)}
           renderItem={({ item, drag, isActive }) => <ShoppingRow item={item} currentUser={currentUser} canManage={isCurrentUserManager} onToggle={togglePurchased} onLongPress={drag} isDragging={isActive} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />}
         />
 
