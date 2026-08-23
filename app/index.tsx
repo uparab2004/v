@@ -95,7 +95,7 @@ export default function MaqadhiHome() {
       .from('maqadhi_v2_items')
       .select('id, name, quantity, added_by, purchased, purchased_by')
       .eq('group_id', groupId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
     if (error || !data) return;
     setItems(data.map((item) => ({
       id: item.id,
