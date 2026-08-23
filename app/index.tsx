@@ -187,8 +187,25 @@ export default function MaqadhiHome() {
       setActionError('');
     }
   };
-  const leaveGroup = (nextManager: string) => {
+  const leaveGroup = async (nextManager: string) => {
     if (!activeGroup) return;
+    const groupId = activeGroup.id;
+    const { error: managerError } = await supabase.from('maqadhi_v2_members').update({ role: 'manager' }).eq('group_id', groupId).eq('name', nextManager);
+    if (managerError) {
+      setNotice('تعذر تعيين المدير البديل. حاول مرة أخرى.');
+      return;
+    }
+    const { error: groupError } = await supabase.from('maqadhi_v2_groups').update({ owner_name: nextManager }).eq('id', groupId);
+    if (groupError) {
+      await supabase.from('maqadhi_v2_members').update({ role: 'member' }).eq('group_id', groupId).eq('name', nextManager);
+      setNotice('تعذر إتمام المغادرة. حاول مرة أخرى.');
+      return;
+    }
+    const { error: leaveError } = await supabase.from('maqadhi_v2_members').delete().eq('group_id', groupId).eq('name', currentUser);
+    if (leaveError) {
+      setNotice('تعذر إتمام المغادرة. حاول مرة أخرى.');
+      return;
+    }
     setExitVisible(false);
     const updated = { ...activeGroup, manager: nextManager, members: activeGroup.members.filter((name) => name !== currentUser) };
     const remaining = groupList.filter((group) => group.id !== updated.id);
@@ -203,8 +220,13 @@ export default function MaqadhiHome() {
     }
   };
 
-  const deleteCurrentGroup = () => {
+  const deleteCurrentGroup = async () => {
     if (!activeGroup) return;
+    const { error } = await supabase.from('maqadhi_v2_groups').delete().eq('id', activeGroup.id);
+    if (error) {
+      setNotice('تعذر حذف المجموعة. حاول مرة أخرى.');
+      return;
+    }
     const remaining = groupList.filter((group) => group.id !== activeGroup.id);
     setGroupList(remaining);
     setActiveGroup(remaining[0] ?? null);
