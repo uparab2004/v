@@ -45,12 +45,13 @@ export default function MaqadhiHome() {
   const [editedName, setEditedName] = useState('');
   const [notice, setNotice] = useState('');
   const inputRef = useRef<TextInput>(null);
+  const currentUser = memberName.trim();
 
   const addItem = () => {
     const name = newItem.trim();
-    if (!name) return;
+    if (!name || !currentUser) return;
     setItems((current) => [
-      { id: String(Date.now()), name, quantity: 1, addedBy: 'محمود', purchased: false },
+      { id: String(Date.now()), name, quantity: 1, addedBy: currentUser, purchased: false },
       ...current,
     ]);
     setNewItem('');
@@ -66,7 +67,7 @@ export default function MaqadhiHome() {
   const togglePurchased = (id: string) => {
     setItems((current) => current.map((item) =>
       item.id === id
-        ? { ...item, purchased: !item.purchased, purchasedBy: !item.purchased ? 'محمود' : undefined }
+        ? { ...item, purchased: !item.purchased, purchasedBy: !item.purchased ? currentUser : undefined }
         : item,
     ));
   };
@@ -121,6 +122,7 @@ export default function MaqadhiHome() {
     setGroupAction(null);
     setGroupsVisible(false);
     setActionError('');
+    setNotice('');
   };
   const joinGroup = async () => {
     const code = joinCode.trim().toUpperCase();
@@ -147,6 +149,7 @@ export default function MaqadhiHome() {
       setGroupAction(null);
       setGroupsVisible(false);
       setActionError('');
+      setNotice('');
       await refreshMembers(group.id);
     } else if (existing?.status === 'pending') {
       setActionError('طلب انضمامك ما زال بانتظار موافقة المدير.');
@@ -165,16 +168,16 @@ export default function MaqadhiHome() {
   const leaveGroup = (nextManager: string) => {
     if (!activeGroup) return;
     setExitVisible(false);
-    const updated = { ...activeGroup, manager: nextManager, members: activeGroup.members.filter((name) => name !== 'محمود') };
+    const updated = { ...activeGroup, manager: nextManager, members: activeGroup.members.filter((name) => name !== currentUser) };
     const remaining = groupList.filter((group) => group.id !== updated.id);
     setGroupList(remaining);
     const alternative = remaining[0];
     if (alternative) {
       setActiveGroup(alternative);
-      setNotice(`تم تعيين ${nextManager} مديرًا وغادرت المجموعة.`);
+      setNotice('');
     } else {
       setActiveGroup(null);
-      setNotice(`تم تعيين ${nextManager} مديرًا وغادرت المجموعة.`);
+      setNotice('');
     }
   };
 
@@ -185,7 +188,7 @@ export default function MaqadhiHome() {
     setActiveGroup(remaining[0] ?? null);
     setItems([]);
     setExitVisible(false);
-    setNotice('تم حذف المجموعة.');
+    setNotice('');
   };
 
   const acceptRequest = async (name: string) => {
@@ -238,7 +241,7 @@ export default function MaqadhiHome() {
     );
   }
 
-  const otherMembers = activeGroup.members.filter((name) => name !== 'محمود');
+  const otherMembers = activeGroup.members.filter((name) => name !== currentUser);
 
   return (
     <View style={styles.screen}>
@@ -296,13 +299,13 @@ export default function MaqadhiHome() {
 
         <Text style={styles.sectionTitle}>المطلوب شراؤه ({wanted.length})</Text>
         {wanted.map((item) => (
-          <ShoppingRow key={item.id} item={item} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
+          <ShoppingRow key={item.id} item={item} currentUser={currentUser} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
         ))}
 
         {bought.length > 0 && <View style={styles.divider} />}
         {bought.length > 0 && <Text style={styles.sectionTitle}>تم شراؤه ({bought.length})</Text>}
         {bought.map((item) => (
-          <ShoppingRow key={item.id} item={item} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
+          <ShoppingRow key={item.id} item={item} currentUser={currentUser} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
         ))}
       </ScrollView>
 
@@ -311,7 +314,7 @@ export default function MaqadhiHome() {
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <Text style={styles.modalTitle}>مجموعاتي</Text>
             {groupList.map((group) => (
-              <TouchableOpacity key={group.id} style={[styles.groupOption, group.id === activeGroup.id && styles.activeGroup]} onPress={() => { setActiveGroup(group); setGroupsVisible(false); }}>
+              <TouchableOpacity key={group.id} style={[styles.groupOption, group.id === activeGroup.id && styles.activeGroup]} onPress={() => { setActiveGroup(group); setNotice(''); setGroupsVisible(false); }}>
                 <View><Text style={styles.groupOptionName}>{group.name}</Text><Text style={styles.groupOptionCode}>رمز الانضمام: {group.code}</Text></View>
                 {group.id === activeGroup.id && <Check color={colors.primary} size={20} />}
               </TouchableOpacity>
@@ -369,7 +372,7 @@ export default function MaqadhiHome() {
         <Pressable style={styles.overlay} onPress={() => setMembersVisible(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <Text style={styles.modalTitle}>أعضاء المجموعة</Text>
-            {activeGroup.members.map((name) => <View key={name} style={styles.memberRow}><View style={styles.memberAvatar}><Text style={styles.memberAvatarText}>{name.charAt(0)}</Text></View><Text style={styles.memberName}>{name}{name === 'محمود' ? ' (أنت)' : ''}</Text>{name === activeGroup.manager && <Text style={styles.managerBadge}>مدير</Text>}</View>)}
+            {activeGroup.members.map((name) => <View key={name} style={styles.memberRow}><View style={styles.memberAvatar}><Text style={styles.memberAvatarText}>{name.charAt(0)}</Text></View><Text style={styles.memberName}>{name}{name === currentUser ? ' (أنت)' : ''}</Text>{name === activeGroup.manager && <Text style={styles.managerBadge}>مدير</Text>}</View>)}
             <TouchableOpacity onPress={() => setMembersVisible(false)}><Text style={styles.closeText}>إغلاق</Text></TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -390,9 +393,9 @@ export default function MaqadhiHome() {
   );
 }
 
-function ShoppingRow({ item, onToggle, onQuantity, onDelete, editingId, editedName, onEdit, onEditedName, onSave }: { item: Item; onToggle: (id: string) => void; onQuantity: (id: string, amount: number) => void; onDelete: (id: string) => void; editingId: string | null; editedName: string; onEdit: (item: Item) => void; onEditedName: (name: string) => void; onSave: () => void }) {
+function ShoppingRow({ item, currentUser, onToggle, onQuantity, onDelete, editingId, editedName, onEdit, onEditedName, onSave }: { item: Item; currentUser: string; onToggle: (id: string) => void; onQuantity: (id: string, amount: number) => void; onDelete: (id: string) => void; editingId: string | null; editedName: string; onEdit: (item: Item) => void; onEditedName: (name: string) => void; onSave: () => void }) {
   const isEditing = editingId === item.id;
-  const canEdit = item.addedBy === 'محمود';
+  const canEdit = item.addedBy === currentUser;
   return (
     <View style={[styles.itemRow, item.purchased && styles.purchasedRow]}>
       {isEditing ? (
