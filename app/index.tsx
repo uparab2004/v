@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   I18nManager,
   Modal,
   Pressable,
@@ -87,6 +88,13 @@ export default function MaqadhiHome() {
     const members = data.filter((entry) => entry.status === 'approved').map((entry) => entry.name);
     const pending = data.filter((entry) => entry.status === 'pending').map((entry) => entry.name);
     const manager = data.find((entry) => entry.role === 'manager')?.name ?? '';
+    if (currentUser && !members.includes(currentUser)) {
+      setGroupList((current) => current.filter((group) => group.id !== groupId));
+      setActiveGroup((current) => current?.id === groupId ? null : current);
+      setItems([]);
+      setNotice('تمت إزالتك من المجموعة.');
+      return;
+    }
     setActiveGroup((current) => current?.id === groupId ? { ...current, members, pending, manager } : current);
     setGroupList((current) => current.map((group) => group.id === groupId ? { ...group, members, pending, manager } : group));
   };
@@ -256,6 +264,29 @@ export default function MaqadhiHome() {
     await refreshMembers(activeGroup.id);
   };
 
+  const removeMember = (name: string) => {
+    if (!activeGroup || activeGroup.manager !== currentUser || name === activeGroup.manager) return;
+    Alert.alert('إزالة عضو', `هل تريد إزالة ${name} من المجموعة؟`, [
+      { text: 'إلغاء', style: 'cancel' },
+      {
+        text: 'إزالة',
+        style: 'destructive',
+        onPress: () => void confirmRemoveMember(name),
+      },
+    ]);
+  };
+
+  const confirmRemoveMember = async (name: string) => {
+    if (!activeGroup || activeGroup.manager !== currentUser) return;
+    const { error } = await supabase.from('maqadhi_v2_members').delete().eq('group_id', activeGroup.id).eq('name', name);
+    if (error) {
+      setNotice('تعذر إزالة العضو. حاول مرة أخرى.');
+      return;
+    }
+    setNotice(`تمت إزالة ${name} من المجموعة.`);
+    await refreshMembers(activeGroup.id);
+  };
+
   const share = () => setShareVisible(true);
   const shareCode = async () => {
     await Share.share({ title: 'رمز الانضمام إلى مجموعة مقاضي', message: `رمز الانضمام إلى مجموعة «${activeGroup?.name}»: ${activeGroup?.code}` });
@@ -304,6 +335,7 @@ export default function MaqadhiHome() {
   }
 
   const otherMembers = activeGroup.members.filter((name) => name !== currentUser);
+  const isCurrentUserManager = activeGroup.manager === currentUser;
 
   return (
     <View style={styles.screen}>
@@ -435,7 +467,7 @@ export default function MaqadhiHome() {
         <Pressable style={styles.overlay} onPress={() => setMembersVisible(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <Text style={styles.modalTitle}>أعضاء المجموعة</Text>
-            {activeGroup.members.map((name) => <View key={name} style={styles.memberRow}><View style={styles.memberAvatar}><Text style={styles.memberAvatarText}>{name.charAt(0)}</Text></View><Text style={styles.memberName}>{name}{name === currentUser ? ' (أنت)' : ''}</Text>{name === activeGroup.manager && <Text style={styles.managerBadge}>مدير</Text>}</View>)}
+            {activeGroup.members.map((name) => <View key={name} style={styles.memberRow}><View style={styles.memberAvatar}><Text style={styles.memberAvatarText}>{name.charAt(0)}</Text></View><Text style={styles.memberName}>{name}{name === currentUser ? ' (أنت)' : ''}</Text>{name === activeGroup.manager && <Text style={styles.managerBadge}>مدير</Text>}{isCurrentUserManager && name !== activeGroup.manager && <TouchableOpacity style={styles.removeMemberButton} onPress={() => removeMember(name)}><Text style={styles.removeMemberText}>إزالة</Text></TouchableOpacity>}</View>)}
             <TouchableOpacity onPress={() => setMembersVisible(false)}><Text style={styles.closeText}>إغلاق</Text></TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -493,5 +525,5 @@ const styles = StyleSheet.create({
   itemRow: { minHeight: 67, borderWidth: 1, borderColor: colors.border, borderRadius: 12, marginBottom: 9, paddingVertical: 8, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff' }, purchasedRow: { backgroundColor: colors.gray, borderColor: '#e5e8e6' }, itemTap: { flex: 1, minWidth: 0 }, itemDetails: { gap: 4 }, itemName: { color: colors.text, fontWeight: '800', fontSize: 16 }, purchasedName: { color: '#7c8580', textDecorationLine: 'line-through' }, metaLine: { flexDirection: 'row', alignItems: 'center', gap: 8 }, meta: { color: colors.muted, fontSize: 11 }, editText: { color: colors.primary, fontSize: 11, fontWeight: '800' }, inlineEdit: { width: '100%', borderWidth: 1, borderColor: '#bde3cb', borderRadius: 8, height: 42, paddingHorizontal: 11, paddingVertical: 0, color: colors.text, fontSize: 16, textAlign: 'right', writingDirection: 'rtl', includeFontPadding: false }, editButton: { alignSelf: 'flex-start', marginTop: 6, backgroundColor: colors.primaryLight, borderRadius: 7, paddingVertical: 6, paddingHorizontal: 14 }, editButtonText: { color: colors.primary, fontWeight: '800', fontSize: 12 }, quantity: { direction: 'ltr', flexDirection: 'row', alignItems: 'center', gap: 6 }, quantityButton: { width: 29, height: 29, borderRadius: 7, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' }, quantityValue: { color: colors.text, fontWeight: '800', fontSize: 16, minWidth: 17, textAlign: 'center' }, deleteButton: { padding: 4 }, divider: { height: 1, backgroundColor: '#e8ebe9', marginVertical: 18 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', padding: 16 }, sheet: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 11 }, modalTitle: { color: colors.text, fontWeight: '800', fontSize: 21, textAlign: 'center', marginBottom: 6 }, modalInput: { borderWidth: 1, borderColor: '#d9dedb', borderRadius: 12, height: 50, paddingHorizontal: 14, color: colors.text, fontSize: 16 }, actionError: { color: colors.danger, textAlign: 'center', fontSize: 13 }, modalHint: { color: colors.muted, textAlign: 'center', lineHeight: 21 }, shareCodeText: { color: colors.primary, textAlign: 'center', fontWeight: '800', fontSize: 18, letterSpacing: 1.2 }, groupOption: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, activeGroup: { borderColor: colors.primary, backgroundColor: colors.primaryLight }, groupOptionName: { color: colors.text, fontSize: 16, fontWeight: '800' }, groupOptionCode: { color: colors.muted, marginTop: 3, fontSize: 12 }, primaryModalButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginTop: 6 }, primaryModalText: { color: '#fff', fontWeight: '800', fontSize: 16 }, secondaryModalButton: { borderColor: '#d6ded9', borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, secondaryModalText: { color: colors.text, fontWeight: '800', fontSize: 16 }, closeText: { color: colors.muted, textAlign: 'center', fontWeight: '700', paddingTop: 6, paddingBottom: 2 },
   requestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 13 }, requestName: { color: colors.text, fontWeight: '700', fontSize: 16 }, requestButtons: { flexDirection: 'row', gap: 8 }, acceptButton: { backgroundColor: colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 9 }, acceptText: { color: '#fff', fontWeight: '800' }, rejectButton: { borderColor: '#e3b9b9', borderWidth: 1, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 9 }, rejectText: { color: colors.danger, fontWeight: '800' },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 12 }, memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff3dd', alignItems: 'center', justifyContent: 'center' }, memberAvatarText: { color: '#b57814', fontSize: 17, fontWeight: '800' }, memberName: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 }, managerBadge: { color: '#a66b17', backgroundColor: '#fff3dd', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 10, fontSize: 12, fontWeight: '800' }, managerChoice: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#d7e5db', borderRadius: 10, padding: 12, gap: 8 }, chooseText: { color: colors.primary, fontWeight: '800', fontSize: 13 }, deleteGroupButton: { backgroundColor: '#fff0f0', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 }, deleteGroupText: { color: colors.danger, fontWeight: '800', fontSize: 15 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 12 }, memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff3dd', alignItems: 'center', justifyContent: 'center' }, memberAvatarText: { color: '#b57814', fontSize: 17, fontWeight: '800' }, memberName: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 }, managerBadge: { color: '#a66b17', backgroundColor: '#fff3dd', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 10, fontSize: 12, fontWeight: '800' }, removeMemberButton: { borderWidth: 1, borderColor: '#efc4c4', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 9 }, removeMemberText: { color: colors.danger, fontSize: 12, fontWeight: '800' }, managerChoice: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#d7e5db', borderRadius: 10, padding: 12, gap: 8 }, chooseText: { color: colors.primary, fontWeight: '800', fontSize: 13 }, deleteGroupButton: { backgroundColor: '#fff0f0', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 }, deleteGroupText: { color: colors.danger, fontWeight: '800', fontSize: 15 },
 });
