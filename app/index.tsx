@@ -161,15 +161,24 @@ export default function MaqadhiHome() {
     if (!activeGroup) return;
     const item = items.find((entry) => entry.id === id);
     if (!item) return;
+
+    const nextPurchased = !item.purchased;
+    const nextPurchasedBy = nextPurchased ? currentUser : undefined;
+    setItems((current) => current.map((entry) => entry.id === id
+      ? { ...entry, purchased: nextPurchased, purchasedBy: nextPurchasedBy }
+      : entry));
+
     const { error } = await supabase.from('maqadhi_v2_items').update({
-      purchased: !item.purchased,
-      purchased_by: item.purchased ? null : currentUser,
+      purchased: nextPurchased,
+      purchased_by: nextPurchased ? currentUser : null,
     }).eq('id', id).eq('group_id', activeGroup.id);
     if (error) {
+      setItems((current) => current.map((entry) => entry.id === id
+        ? { ...entry, purchased: item.purchased, purchasedBy: item.purchasedBy }
+        : entry));
       setNotice('تعذر نقل الغرض. حاول مرة أخرى.');
       return;
     }
-    await refreshItems(activeGroup.id);
   };
 
   const removeItem = async (id: string) => {
