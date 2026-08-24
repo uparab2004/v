@@ -670,7 +670,7 @@ function ShoppingRow({ item, currentUser, canManage, onToggle, onLongPress, isDr
       {!isEditing && <View style={styles.addedBy}>
         <TouchableOpacity style={styles.addedInfoTap} onPress={() => onToggle(item.id)} onLongPress={onLongPress} activeOpacity={0.7}>
           <Text numberOfLines={1} style={styles.meta}>أضافه: {item.addedBy}</Text>
-          {item.purchasedBy && <Text numberOfLines={1} style={styles.meta}>تم شراؤه: {item.purchasedBy}</Text>}
+          {item.purchasedBy && <Text numberOfLines={1} style={styles.meta}>اشتراه: {item.purchasedBy}</Text>}
         </TouchableOpacity>
         {canEdit && !item.purchased && <TouchableOpacity onPress={() => onEdit(item)}><Text style={styles.editText}>تعديل</Text></TouchableOpacity>}
       </View>}
