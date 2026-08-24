@@ -3,10 +3,24 @@
     "name": "مقاضي",
     "slug": "maqadhi-v2",
     "version": "0.1.0",
+    "android": {
+      "package": "com.uparab2004.maqadhi"
+    },
     "orientation": "portrait",
     "scheme": "maqadhi",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-router"],
-    "experiments": { "typedRoutes": true }
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4e0325dd-b609-49d2-8c76-0e9a26999339"
+      }
+    },
+    "owner": "uparab"
   }
 }
