@@ -667,7 +667,13 @@ function ShoppingRow({ item, currentUser, canManage, onToggle, onLongPress, isDr
         <Text style={styles.quantityValue}>{item.quantity}</Text>
         <TouchableOpacity style={styles.quantityButton} onPress={() => onQuantity(item.id, -1)}><Minus size={17} color={colors.primary} /></TouchableOpacity>
       </View>
-      {!isEditing && <View style={styles.addedBy}><TouchableOpacity style={styles.addedInfoTap} onPress={() => onToggle(item.id)} onLongPress={onLongPress} activeOpacity={0.7}><Text numberOfLines={1} style={styles.meta}>{item.purchasedBy ? `تم شراؤه: ${item.purchasedBy}` : `أضافه: ${item.addedBy}`}</Text></TouchableOpacity>{canEdit && <TouchableOpacity onPress={() => onEdit(item)}><Text style={styles.editText}>تعديل</Text></TouchableOpacity>}</View>}
+      {!isEditing && <View style={styles.addedBy}>
+        <TouchableOpacity style={styles.addedInfoTap} onPress={() => onToggle(item.id)} onLongPress={onLongPress} activeOpacity={0.7}>
+          <Text numberOfLines={1} style={styles.meta}>أضافه: {item.addedBy}</Text>
+          {item.purchasedBy && <Text numberOfLines={1} style={styles.meta}>تم شراؤه: {item.purchasedBy}</Text>}
+        </TouchableOpacity>
+        {canEdit && !item.purchased && <TouchableOpacity onPress={() => onEdit(item)}><Text style={styles.editText}>تعديل</Text></TouchableOpacity>}
+      </View>}
       {item.purchased && (canManage || canEdit) && <TouchableOpacity style={styles.deleteButton} onPress={() => onDelete(item.id)}><X size={18} color={colors.danger} /></TouchableOpacity>}
     </View>
   );
