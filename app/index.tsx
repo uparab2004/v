@@ -17,6 +17,7 @@ import { Check, ChevronDown, CircleHelp, Clipboard, LogOut, Minus, Pencil, Plus,
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { PhoneLogin } from '../components/PhoneLogin';
 
 I18nManager.allowRTL(true);
 
@@ -34,6 +35,7 @@ type Group = { id: string; name: string; code: string; members: string[]; pendin
 type PendingJoin = { id: string; name: string; code: string; ownerName: string };
 type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null; personalOrders?: Record<string, string[]> };
 const SESSION_KEY = '@maqadhi/session-v1';
+const PHONE_LOGIN_ENABLED = process.env.EXPO_PUBLIC_ENABLE_PHONE_LOGIN === 'true';
 
 export default function MaqadhiHome() {
   const { code: linkedCode } = useLocalSearchParams<{ code?: string }>();
@@ -58,6 +60,8 @@ export default function MaqadhiHome() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState('');
   const [notice, setNotice] = useState('');
+  const [authReady, setAuthReady] = useState(!PHONE_LOGIN_ENABLED);
+  const [authenticated, setAuthenticated] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const currentUser = memberName.trim();
 
@@ -84,6 +88,27 @@ export default function MaqadhiHome() {
     void restoreSession();
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!PHONE_LOGIN_ENABLED) return;
+    let active = true;
+    const applySession = (session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']) => {
+      if (!active) return;
+      setAuthenticated(Boolean(session));
+      const displayName = session?.user.user_metadata?.display_name;
+      if (typeof displayName === 'string' && displayName.trim()) {
+        setMemberName((current) => current || displayName.trim());
+      }
+      setAuthReady(true);
+    };
+    void supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => applySession(session));
+    return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+
+  if (PHONE_LOGIN_ENABLED && (!authReady || !authenticated)) {
+    return <PhoneLogin onAuthenticated={() => setAuthenticated(true)} />;
+  }
 
   useEffect(() => {
     if (!sessionReady) return;
