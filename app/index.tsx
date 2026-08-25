@@ -607,7 +607,7 @@ export default function MaqadhiHome() {
             <Text style={styles.infoText}>مقاضي يساعد العائلة أو فريق العمل على مشاركة قائمة الاحتياجات ومعرفة ما تم شراؤه.</Text>
             <Text style={styles.infoText}>أضف غرضًا، عدّل الكمية عند الحاجة، واضغط على الغرض عند شرائه لنقله إلى قسم «تم شراؤه».</Text>
             <Text style={styles.infoLabel}>للتواصل والاقتراحات</Text>
-            <Text style={styles.infoEmail} selectable>support@maqadhi.app</Text>
+            <Text style={styles.infoEmail} selectable>uparab2004@gmail.com</Text>
             <TouchableOpacity onPress={() => setInfoVisible(false)}><Text style={styles.closeText}>إغلاق</Text></TouchableOpacity>
           </Pressable>
         </Pressable>
