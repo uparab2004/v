@@ -50,6 +50,7 @@ export default function MaqadhiHome() {
   const [membersVisible, setMembersVisible] = useState(false);
   const [infoVisible, setInfoVisible] = useState(false);
   const [exitVisible, setExitVisible] = useState(false);
+  const [exitRequiresManager, setExitRequiresManager] = useState(false);
   const [groupAction, setGroupAction] = useState<'create' | 'join' | null>(null);
   const [shareVisible, setShareVisible] = useState(false);
   const [groupName, setGroupName] = useState('');
@@ -363,9 +364,54 @@ export default function MaqadhiHome() {
       setActionError('');
     }
   };
+  const leaveAsMember = async () => {
+    if (!activeGroup) return;
+    const groupId = activeGroup.id;
+    const { error } = await supabase.from('maqadhi_v2_members').delete().eq('group_id', groupId).eq('name', currentUser);
+    if (error) {
+      setNotice('تعذر إتمام المغادرة. حاول مرة أخرى.');
+      return;
+    }
+    setExitVisible(false);
+    const remaining = groupList.filter((group) => group.id !== groupId);
+    setGroupList(remaining);
+    setActiveGroup(remaining[0] ?? null);
+    setItems([]);
+    setNotice('');
+  };
+
+  const openExitDialog = async () => {
+    if (!activeGroup) return;
+    const { data } = await supabase
+      .from('maqadhi_v2_members')
+      .select('name')
+      .eq('group_id', activeGroup.id)
+      .eq('role', 'manager')
+      .eq('status', 'approved')
+      .maybeSingle();
+    const manager = data?.name ?? activeGroup.manager;
+    setExitRequiresManager(manager === currentUser);
+    if (manager !== activeGroup.manager) {
+      setActiveGroup((current) => current?.id === activeGroup.id ? { ...current, manager } : current);
+      setGroupList((current) => current.map((group) => group.id === activeGroup.id ? { ...group, manager } : group));
+    }
+    setExitVisible(true);
+  };
+
   const leaveGroup = async (nextManager: string) => {
     if (!activeGroup) return;
     const groupId = activeGroup.id;
+    const { data: managerRecord } = await supabase
+      .from('maqadhi_v2_members')
+      .select('name')
+      .eq('group_id', groupId)
+      .eq('role', 'manager')
+      .eq('status', 'approved')
+      .maybeSingle();
+    if (managerRecord?.name !== currentUser) {
+      await leaveAsMember();
+      return;
+    }
     const { error: managerError } = await supabase.from('maqadhi_v2_members').update({ role: 'manager' }).eq('group_id', groupId).eq('name', nextManager);
     if (managerError) {
       setNotice('تعذر تعيين المدير البديل. حاول مرة أخرى.');
@@ -530,7 +576,7 @@ export default function MaqadhiHome() {
               <Users color={colors.muted} size={19} />
               <Text style={styles.actionText}>الأعضاء ({activeGroup.members.length})</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.exitAction} onPress={() => setExitVisible(true)}>
+            <TouchableOpacity style={styles.exitAction} onPress={() => void openExitDialog()}>
               <LogOut color={colors.danger} size={18} />
               <Text style={styles.exitText}>خروج</Text>
             </TouchableOpacity>
@@ -669,10 +715,16 @@ export default function MaqadhiHome() {
       <Modal visible={exitVisible} transparent animationType="fade" onRequestClose={() => setExitVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setExitVisible(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
-            <Text style={styles.modalTitle}>{otherMembers.length ? 'تعيين مدير بديل' : 'مغادرة المجموعة'}</Text>
-            {otherMembers.length ? <Text style={styles.modalHint}>اختر مديرًا للمجموعة قبل مغادرتك.</Text> : <Text style={styles.modalHint}>أنت العضو الوحيد. ستُحذف المجموعة عند مغادرتك.</Text>}
-            {otherMembers.map((name) => <TouchableOpacity key={name} style={styles.managerChoice} onPress={() => leaveGroup(name)}><Text style={styles.memberName}>{name}</Text><Text style={styles.chooseText}>تعيين مدير</Text></TouchableOpacity>)}
-            {!otherMembers.length && <TouchableOpacity style={styles.deleteGroupButton} onPress={deleteCurrentGroup}><Text style={styles.deleteGroupText}>حذف المجموعة والمغادرة</Text></TouchableOpacity>}
+            {exitRequiresManager ? <>
+              <Text style={styles.modalTitle}>{otherMembers.length ? 'تعيين مدير بديل' : 'مغادرة المجموعة'}</Text>
+              {otherMembers.length ? <Text style={styles.modalHint}>اختر مديرًا للمجموعة قبل مغادرتك.</Text> : <Text style={styles.modalHint}>أنت العضو الوحيد. ستُحذف المجموعة عند مغادرتك.</Text>}
+              {otherMembers.map((name) => <TouchableOpacity key={name} style={styles.managerChoice} onPress={() => leaveGroup(name)}><Text style={styles.memberName}>{name}</Text><Text style={styles.chooseText}>تعيين مدير</Text></TouchableOpacity>)}
+              {!otherMembers.length && <TouchableOpacity style={styles.deleteGroupButton} onPress={deleteCurrentGroup}><Text style={styles.deleteGroupText}>حذف المجموعة والمغادرة</Text></TouchableOpacity>}
+            </> : <>
+              <Text style={styles.modalTitle}>مغادرة المجموعة</Text>
+              <Text style={styles.modalHint}>هل تريد مغادرة هذه المجموعة؟</Text>
+              <TouchableOpacity style={styles.deleteGroupButton} onPress={() => void leaveAsMember()}><Text style={styles.deleteGroupText}>مغادرة المجموعة</Text></TouchableOpacity>
+            </>}
             <TouchableOpacity onPress={() => setExitVisible(false)}><Text style={styles.closeText}>إلغاء</Text></TouchableOpacity>
           </Pressable>
         </Pressable>
