@@ -33,7 +33,7 @@ type Item = {
 
 type Group = { id: string; name: string; code: string; members: string[]; pending: string[]; manager: string };
 type PendingJoin = { id: string; name: string; code: string; ownerName: string };
-type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null; personalOrders?: Record<string, string[]> };
+type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null; personalOrders?: Record<string, string[]>; cachedItems?: Record<string, Item[]> };
 const SESSION_KEY = '@maqadhi/session-v1';
 const PHONE_LOGIN_ENABLED = process.env.EXPO_PUBLIC_ENABLE_PHONE_LOGIN === 'true';
 
@@ -43,6 +43,7 @@ export default function MaqadhiHome() {
   const [activeGroup, setActiveGroup] = useState<Group | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [personalOrders, setPersonalOrders] = useState<Record<string, string[]>>({});
+  const [cachedItems, setCachedItems] = useState<Record<string, Item[]>>({});
   const [items, setItems] = useState<Item[]>([]);
   const [newItem, setNewItem] = useState('');
   const [groupsVisible, setGroupsVisible] = useState(false);
@@ -78,8 +79,13 @@ export default function MaqadhiHome() {
         setGroupList(groups);
         setPendingJoin(session.pendingJoin ?? null);
         setPersonalOrders(session.personalOrders && typeof session.personalOrders === 'object' ? session.personalOrders : {});
+        const savedItems = session.cachedItems && typeof session.cachedItems === 'object' ? session.cachedItems : {};
+        setCachedItems(savedItems);
         const restoredGroup = groups.find((group) => group.id === session.activeGroupId);
-        if (restoredGroup) setActiveGroup(restoredGroup);
+        if (restoredGroup) {
+          setActiveGroup(restoredGroup);
+          setItems(Array.isArray(savedItems[restoredGroup.id]) ? savedItems[restoredGroup.id] : []);
+        }
       } catch {
         // تجاهل أي بيانات محفوظة تالفة وفتح شاشة البداية.
       } finally {
@@ -119,9 +125,15 @@ export default function MaqadhiHome() {
       activeGroupId: activeGroup?.id ?? null,
       pendingJoin,
       personalOrders,
+      cachedItems,
     };
     void AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  }, [sessionReady, memberName, groupList, activeGroup?.id, pendingJoin, personalOrders]);
+  }, [sessionReady, memberName, groupList, activeGroup?.id, pendingJoin, personalOrders, cachedItems]);
+
+  useEffect(() => {
+    if (!activeGroup) return;
+    setItems(cachedItems[activeGroup.id] ?? []);
+  }, [activeGroup?.id]);
 
   const refreshItems = async (groupId: string) => {
     const { data, error } = await supabase
@@ -150,6 +162,7 @@ export default function MaqadhiHome() {
       return firstPosition - secondPosition;
     });
     setItems(mappedItems);
+    setCachedItems((current) => ({ ...current, [groupId]: mappedItems }));
   };
 
   const addItem = async () => {
@@ -190,18 +203,22 @@ export default function MaqadhiHome() {
 
     const nextPurchased = !item.purchased;
     const nextPurchasedBy = nextPurchased ? currentUser : undefined;
-    setItems((current) => current.map((entry) => entry.id === id
+    const optimisticItems = items.map((entry) => entry.id === id
       ? { ...entry, purchased: nextPurchased, purchasedBy: nextPurchasedBy }
-      : entry));
+      : entry);
+    setItems(optimisticItems);
+    setCachedItems((current) => ({ ...current, [activeGroup.id]: optimisticItems }));
 
     const { error } = await supabase.from('maqadhi_v2_items').update({
       purchased: nextPurchased,
       purchased_by: nextPurchased ? currentUser : null,
     }).eq('id', id).eq('group_id', activeGroup.id);
     if (error) {
-      setItems((current) => current.map((entry) => entry.id === id
+      const revertedItems = optimisticItems.map((entry) => entry.id === id
         ? { ...entry, purchased: item.purchased, purchasedBy: item.purchasedBy }
-        : entry));
+        : entry);
+      setItems(revertedItems);
+      setCachedItems((current) => ({ ...current, [activeGroup.id]: revertedItems }));
       setNotice('تعذر نقل الغرض. حاول مرة أخرى.');
       return;
     }
@@ -236,7 +253,9 @@ export default function MaqadhiHome() {
   const saveWantedOrder = (orderedItems: Item[]) => {
     if (!activeGroup) return;
     const groupId = activeGroup.id;
-    setItems((current) => [...orderedItems, ...current.filter((item) => item.purchased)]);
+    const orderedWithPurchased = [...orderedItems, ...items.filter((item) => item.purchased)];
+    setItems(orderedWithPurchased);
+    setCachedItems((current) => ({ ...current, [groupId]: orderedWithPurchased }));
     setPersonalOrders((current) => ({ ...current, [groupId]: orderedItems.map((item) => item.id) }));
   };
   const refreshMembers = async (groupId: string) => {
