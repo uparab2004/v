@@ -3,8 +3,13 @@
     "name": "مقاضي",
     "slug": "maqadhi-v2",
     "version": "0.1.0",
+    "icon": "./assets/icon.png",
     "android": {
-      "package": "com.uparab2004.maqadhi"
+      "package": "com.uparab2004.maqadhi",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F6FBF8"
+      }
     },
     "orientation": "portrait",
     "scheme": "maqadhi",

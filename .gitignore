@@ -8,3 +8,4 @@ expo-env.d.ts
 node_modules/
 .expo/
 .env
+release/*.aab

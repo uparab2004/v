@@ -29,13 +29,102 @@ type Item = {
   purchasedBy?: string;
   purchased: boolean;
   createdAt: string;
+  version?: number;
 };
 
 type Group = { id: string; name: string; code: string; members: string[]; pending: string[]; manager: string };
 type PendingJoin = { id: string; name: string; code: string; ownerName: string };
 type SavedSession = { memberName: string; groups: Group[]; activeGroupId: string | null; pendingJoin: PendingJoin | null; personalOrders?: Record<string, string[]>; cachedItems?: Record<string, Item[]> };
+type ItemOperationType = 'add' | 'quantity_delta' | 'set_purchased' | 'rename' | 'delete';
+type PendingItemOperation = {
+  id: string;
+  groupId: string;
+  actorName: string;
+  type: ItemOperationType;
+  itemId: string;
+  payload: Record<string, string | number | boolean>;
+  baseVersion?: number;
+  createdAt: string;
+};
+type ItemSyncResult = {
+  ok?: boolean;
+  status?: 'applied' | 'noop' | 'rejected';
+  reason?: string;
+  duplicate?: boolean;
+};
+type LocalItemChange = { operation: PendingItemOperation; nextItems: Item[] };
+type PersistedItemState = { queue: PendingItemOperation[]; cachedItems: Record<string, Item[]> };
 const SESSION_KEY = '@maqadhi/session-v1';
+const ITEM_QUEUE_KEY = '@maqadhi/item-queue-v1';
 const PHONE_LOGIN_ENABLED = process.env.EXPO_PUBLIC_ENABLE_PHONE_LOGIN === 'true';
+
+const createUuid = () => {
+  const nativeUuid = globalThis.crypto?.randomUUID?.();
+  if (nativeUuid) return nativeUuid;
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+};
+
+const isNetworkFailure = (error: unknown) => {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'object' && error && 'message' in error
+      ? String(error.message)
+      : String(error ?? '');
+  return /network|fetch|timeout|offline|internet|connection/i.test(message);
+};
+
+const applyPendingOperations = (groupId: string, sourceItems: Item[], operations: PendingItemOperation[]) => {
+  let merged = [...sourceItems];
+  for (const operation of operations) {
+    if (operation.groupId !== groupId) continue;
+    if (operation.type === 'add') {
+      if (!merged.some((item) => item.id === operation.itemId)) {
+        merged.push({
+          id: operation.itemId,
+          name: String(operation.payload.name ?? ''),
+          quantity: Number(operation.payload.quantity ?? 1),
+          addedBy: operation.actorName,
+          purchased: false,
+          createdAt: String(operation.payload.createdAt ?? operation.createdAt),
+          version: 1,
+        });
+      }
+      continue;
+    }
+    if (operation.type === 'delete') {
+      merged = merged.filter((item) => item.id !== operation.itemId);
+      continue;
+    }
+    merged = merged.map((item) => {
+      if (item.id !== operation.itemId) return item;
+      if (operation.type === 'quantity_delta') {
+        return {
+          ...item,
+          quantity: Math.max(1, item.quantity + Number(operation.payload.delta ?? 0)),
+          version: (item.version ?? 0) + 1,
+        };
+      }
+      if (operation.type === 'set_purchased') {
+        const purchased = Boolean(operation.payload.purchased);
+        return {
+          ...item,
+          purchased,
+          purchasedBy: purchased ? String(operation.payload.purchasedBy ?? operation.actorName) : undefined,
+          version: (item.version ?? 0) + 1,
+        };
+      }
+      if (operation.type === 'rename') {
+        return { ...item, name: String(operation.payload.name ?? item.name), version: (item.version ?? 0) + 1 };
+      }
+      return item;
+    });
+  }
+  return merged;
+};
 
 export default function MaqadhiHome() {
   const { code: linkedCode } = useLocalSearchParams<{ code?: string }>();
@@ -44,6 +133,7 @@ export default function MaqadhiHome() {
   const [sessionReady, setSessionReady] = useState(false);
   const [personalOrders, setPersonalOrders] = useState<Record<string, string[]>>({});
   const [cachedItems, setCachedItems] = useState<Record<string, Item[]>>({});
+  const [pendingItemOperations, setPendingItemOperations] = useState<PendingItemOperation[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [newItem, setNewItem] = useState('');
   const [groupsVisible, setGroupsVisible] = useState(false);
@@ -65,13 +155,41 @@ export default function MaqadhiHome() {
   const [authReady, setAuthReady] = useState(!PHONE_LOGIN_ENABLED);
   const [authenticated, setAuthenticated] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const itemQueueRef = useRef<PendingItemOperation[]>([]);
+  const itemsRef = useRef<Item[]>([]);
+  const cachedItemsRef = useRef<Record<string, Item[]>>({});
+  const activeGroupIdRef = useRef<string | null>(null);
+  const queueMutationRef = useRef<Promise<void>>(Promise.resolve());
+  const localItemMutationRef = useRef<Promise<void>>(Promise.resolve());
+  const flushingItemQueuePromiseRef = useRef<Promise<void> | null>(null);
+  const offlineSyncNoticeShownRef = useRef(false);
   const currentUser = memberName.trim();
 
   useEffect(() => {
     let active = true;
     const restoreSession = async () => {
       try {
-        const stored = await AsyncStorage.getItem(SESSION_KEY);
+        const [stored, storedQueue] = await Promise.all([
+          AsyncStorage.getItem(SESSION_KEY),
+          AsyncStorage.getItem(ITEM_QUEUE_KEY),
+        ]);
+        const persistedItemState: unknown = storedQueue ? JSON.parse(storedQueue) : [];
+        const hasOfflineSnapshot = !Array.isArray(persistedItemState)
+          && typeof persistedItemState === 'object'
+          && persistedItemState !== null
+          && 'cachedItems' in persistedItemState;
+        const savedQueue = Array.isArray(persistedItemState)
+          ? persistedItemState as PendingItemOperation[]
+          : hasOfflineSnapshot && Array.isArray((persistedItemState as PersistedItemState).queue)
+            ? (persistedItemState as PersistedItemState).queue
+            : [];
+        const offlineCachedItems = hasOfflineSnapshot
+          && typeof (persistedItemState as PersistedItemState).cachedItems === 'object'
+          && (persistedItemState as PersistedItemState).cachedItems !== null
+          ? (persistedItemState as PersistedItemState).cachedItems
+          : {};
+        itemQueueRef.current = savedQueue;
+        setPendingItemOperations(savedQueue);
         if (!stored || !active) return;
         const session = JSON.parse(stored) as SavedSession;
         const groups = Array.isArray(session.groups) ? session.groups : [];
@@ -79,12 +197,33 @@ export default function MaqadhiHome() {
         setGroupList(groups);
         setPendingJoin(session.pendingJoin ?? null);
         setPersonalOrders(session.personalOrders && typeof session.personalOrders === 'object' ? session.personalOrders : {});
-        const savedItems = session.cachedItems && typeof session.cachedItems === 'object' ? session.cachedItems : {};
-        setCachedItems(savedItems);
+        const sessionItems = session.cachedItems && typeof session.cachedItems === 'object' ? session.cachedItems : {};
+        const savedItems = { ...sessionItems, ...offlineCachedItems };
         const restoredGroup = groups.find((group) => group.id === session.activeGroupId);
+        const restoredItemsByGroup = hasOfflineSnapshot
+          ? savedItems
+          : groups.reduce<Record<string, Item[]>>((result, group) => ({
+            ...result,
+            [group.id]: applyPendingOperations(group.id, savedItems[group.id] ?? [], savedQueue),
+          }), savedItems);
         if (restoredGroup) {
+          const restoredItems = Array.isArray(restoredItemsByGroup[restoredGroup.id])
+            ? restoredItemsByGroup[restoredGroup.id]
+            : [];
+          activeGroupIdRef.current = restoredGroup.id;
+          itemsRef.current = restoredItems;
           setActiveGroup(restoredGroup);
-          setItems(Array.isArray(savedItems[restoredGroup.id]) ? savedItems[restoredGroup.id] : []);
+          setItems(restoredItems);
+        }
+        cachedItemsRef.current = restoredItemsByGroup;
+        setCachedItems(restoredItemsByGroup);
+        if (!hasOfflineSnapshot) {
+          try {
+            const migratedState: PersistedItemState = { queue: savedQueue, cachedItems: restoredItemsByGroup };
+            await AsyncStorage.setItem(ITEM_QUEUE_KEY, JSON.stringify(migratedState));
+          } catch {
+            // تبقى بيانات الجلسة القديمة قابلة للاستخدام حتى تنجح الكتابة في المرة التالية.
+          }
         }
       } catch {
         // تجاهل أي بيانات محفوظة تالفة وفتح شاشة البداية.
@@ -95,6 +234,22 @@ export default function MaqadhiHome() {
     void restoreSession();
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    itemQueueRef.current = pendingItemOperations;
+  }, [pendingItemOperations]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    cachedItemsRef.current = cachedItems;
+  }, [cachedItems]);
+
+  useEffect(() => {
+    activeGroupIdRef.current = activeGroup?.id ?? null;
+  }, [activeGroup?.id]);
 
   useEffect(() => {
     if (!PHONE_LOGIN_ENABLED) return;
@@ -113,10 +268,6 @@ export default function MaqadhiHome() {
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
 
-  if (PHONE_LOGIN_ENABLED && (!authReady || !authenticated)) {
-    return <PhoneLogin onAuthenticated={() => setAuthenticated(true)} />;
-  }
-
   useEffect(() => {
     if (!sessionReady) return;
     const session: SavedSession = {
@@ -132,17 +283,140 @@ export default function MaqadhiHome() {
 
   useEffect(() => {
     if (!activeGroup) return;
-    setItems(cachedItems[activeGroup.id] ?? []);
+    const groupItems = cachedItemsRef.current[activeGroup.id] ?? [];
+    itemsRef.current = groupItems;
+    setItems(groupItems);
   }, [activeGroup?.id]);
 
+  const persistOfflineItemState = async (
+    nextQueue: PendingItemOperation[],
+    nextCachedItems: Record<string, Item[]> = cachedItemsRef.current,
+  ) => {
+    // الطابور والقائمة يُحفظان في سجل واحد حتى لا يظهر تغيير ناقص بعد إعادة فتح التطبيق.
+    const persistedState: PersistedItemState = { queue: nextQueue, cachedItems: nextCachedItems };
+    await AsyncStorage.setItem(ITEM_QUEUE_KEY, JSON.stringify(persistedState));
+    itemQueueRef.current = nextQueue;
+    cachedItemsRef.current = nextCachedItems;
+    setPendingItemOperations(nextQueue);
+    setCachedItems(nextCachedItems);
+  };
+
+  const mutateItemQueue = (
+    update: (current: PendingItemOperation[]) => PendingItemOperation[],
+    nextCachedItems?: Record<string, Item[]>,
+  ) => {
+    const mutation = queueMutationRef.current.then(async () => {
+      await persistOfflineItemState(update(itemQueueRef.current), nextCachedItems ?? cachedItemsRef.current);
+    });
+    queueMutationRef.current = mutation.catch(() => undefined);
+    return mutation;
+  };
+
+  const enqueueItemOperation = (
+    operation: PendingItemOperation,
+    nextCachedItems: Record<string, Item[]>,
+  ) => (
+    mutateItemQueue((current) => [...current, operation], nextCachedItems)
+  );
+
+  const removeQueuedItemOperation = (operationId: string) => (
+    mutateItemQueue((current) => current.filter((entry) => entry.id !== operationId))
+  );
+
+  const flushPendingItemOperations = () => {
+    if (flushingItemQueuePromiseRef.current) return flushingItemQueuePromiseRef.current;
+    if (!itemQueueRef.current.length) return Promise.resolve();
+
+    const run = (async () => {
+      try {
+        while (itemQueueRef.current.length) {
+          const operation = itemQueueRef.current[0];
+          let data: ItemSyncResult | null = null;
+          let error: { code?: string; message?: string } | null = null;
+          try {
+            const result = await supabase.rpc('maqadhi_v2_apply_item_operation', {
+              p_operation_id: operation.id,
+              p_group_id: operation.groupId,
+              p_actor_name: operation.actorName,
+              p_operation_type: operation.type,
+              p_item_id: operation.itemId,
+              p_payload: operation.payload,
+              p_base_version: operation.baseVersion ?? null,
+              p_client_created_at: operation.createdAt,
+            });
+            data = result.data as ItemSyncResult | null;
+            error = result.error;
+          } catch (requestError) {
+            error = { message: requestError instanceof Error ? requestError.message : 'تعذر الاتصال' };
+          }
+
+          if (error) {
+            if (isNetworkFailure(error)) {
+              if (!offlineSyncNoticeShownRef.current) {
+                offlineSyncNoticeShownRef.current = true;
+                setNotice('تم حفظ تغييراتك على الجهاز، وستُرسل تلقائيًا عند عودة الإنترنت.');
+              }
+            } else if (error.code !== 'PGRST202') {
+              setNotice('تعذر إرسال تغيير محفوظ. سيبقى على جهازك حتى تنجح المزامنة.');
+            }
+            break;
+          }
+
+          if (!data?.ok) {
+            await removeQueuedItemOperation(operation.id);
+            const reason = data?.reason === 'stale_version'
+              ? 'تغيّر هذا الغرض من جهاز آخر، فتم اعتماد آخر نسخة محفوظة.'
+              : data?.reason === 'item_deleted' || data?.reason === 'item_missing'
+                ? 'حُذف هذا الغرض من جهاز آخر قبل مزامنة التغيير.'
+                : 'تعذر تطبيق تغيير محفوظ لأن بيانات المجموعة تغيّرت.';
+            setNotice(reason);
+            continue;
+          }
+
+          offlineSyncNoticeShownRef.current = false;
+          await removeQueuedItemOperation(operation.id);
+        }
+      } catch {
+        setNotice('تعذر تحديث قائمة التغييرات المحفوظة على الجهاز. ستتم المحاولة مرة أخرى.');
+      } finally {
+        flushingItemQueuePromiseRef.current = null;
+      }
+    })();
+    flushingItemQueuePromiseRef.current = run;
+    return run;
+  };
+
   const refreshItems = async (groupId: string) => {
-    const { data, error } = await supabase
+    // محاولة الإرسال أولًا تمنع احتساب عملية وصلت للخادم مرتين عند انقطاع الرد.
+    await flushPendingItemOperations();
+    const baseColumns = 'id, name, quantity, added_by, purchased, purchased_by, created_at';
+    const responseWithVersion = await supabase
       .from('maqadhi_v2_items')
-      .select('id, name, quantity, added_by, purchased, purchased_by, created_at')
+      .select(`${baseColumns}, version`)
       .eq('group_id', groupId)
       .order('created_at', { ascending: true });
+    let data: unknown = responseWithVersion.data;
+    let error: { message: string } | null = responseWithVersion.error;
+    if (error && /version|column/i.test(error.message)) {
+      const fallbackResponse = await supabase
+        .from('maqadhi_v2_items')
+        .select(baseColumns)
+        .eq('group_id', groupId)
+        .order('created_at', { ascending: true });
+      data = fallbackResponse.data;
+      error = fallbackResponse.error;
+    }
     if (error || !data) return;
-    const mappedItems = data.map((item) => ({
+    const mappedItems: Item[] = (data as Array<{
+      id: string;
+      name: string;
+      quantity: number;
+      added_by: string;
+      purchased: boolean;
+      purchased_by: string | null;
+      created_at: string;
+      version?: number;
+    }>).map((item) => ({
       id: item.id,
       name: item.name,
       quantity: item.quantity,
@@ -150,113 +424,242 @@ export default function MaqadhiHome() {
       purchased: item.purchased,
       purchasedBy: item.purchased_by ?? undefined,
       createdAt: item.created_at,
+      version: typeof item.version === 'number' ? item.version : 0,
     }));
-    const order = personalOrders[groupId] ?? [];
-    const positions = new Map(order.map((id, index) => [id, index]));
-    mappedItems.sort((first, second) => {
-      const firstPosition = positions.get(first.id);
-      const secondPosition = positions.get(second.id);
-      if (firstPosition === undefined && secondPosition === undefined) return 0;
-      if (firstPosition === undefined) return 1;
-      if (secondPosition === undefined) return -1;
-      return firstPosition - secondPosition;
+    const commit = localItemMutationRef.current.then(async () => {
+      const pendingItems = applyPendingOperations(groupId, mappedItems, itemQueueRef.current);
+      const order = personalOrders[groupId] ?? [];
+      const positions = new Map(order.map((id, index) => [id, index]));
+      pendingItems.sort((first, second) => {
+        const firstPosition = positions.get(first.id);
+        const secondPosition = positions.get(second.id);
+        if (firstPosition === undefined && secondPosition === undefined) return 0;
+        if (firstPosition === undefined) return 1;
+        if (secondPosition === undefined) return -1;
+        return firstPosition - secondPosition;
+      });
+      cachedItemsRef.current = { ...cachedItemsRef.current, [groupId]: pendingItems };
+      setCachedItems(cachedItemsRef.current);
+      if (activeGroupIdRef.current === groupId) {
+        itemsRef.current = pendingItems;
+        setItems(pendingItems);
+      }
+      await mutateItemQueue((current) => current);
     });
-    setItems(mappedItems);
-    setCachedItems((current) => ({ ...current, [groupId]: mappedItems }));
+    localItemMutationRef.current = commit.then(() => undefined, () => undefined);
+    await commit;
+  };
+
+  useEffect(() => {
+    if (!sessionReady || !pendingItemOperations.length) return;
+    void flushPendingItemOperations();
+    const timer = setInterval(() => void flushPendingItemOperations(), 5000);
+    return () => clearInterval(timer);
+  }, [sessionReady, pendingItemOperations.length]);
+
+  const applyLocalItemChange = (
+    groupId: string,
+    buildChange: (currentItems: Item[]) => LocalItemChange | null,
+  ) => {
+    const task = localItemMutationRef.current.then(async () => {
+      const currentItems = cachedItemsRef.current[groupId]
+        ?? (activeGroupIdRef.current === groupId ? itemsRef.current : []);
+      const change = buildChange(currentItems);
+      if (!change) return false;
+      const nextCachedItems = { ...cachedItemsRef.current, [groupId]: change.nextItems };
+      try {
+        // نحفظ العملية أولًا حتى لا تضيع إن أُغلق التطبيق مباشرة بعد الضغط.
+        await enqueueItemOperation(change.operation, nextCachedItems);
+      } catch {
+        setNotice('تعذر حفظ التغيير على الجهاز. حاول مرة أخرى.');
+        return false;
+      }
+      if (activeGroupIdRef.current === groupId) {
+        itemsRef.current = change.nextItems;
+        setItems(change.nextItems);
+      }
+      void flushPendingItemOperations();
+      return true;
+    });
+    localItemMutationRef.current = task.then(() => undefined, () => undefined);
+    return task;
   };
 
   const addItem = async () => {
     const name = newItem.trim();
     if (!name || !currentUser || !activeGroup) return;
-    const { error } = await supabase.from('maqadhi_v2_items').insert({
-      group_id: activeGroup.id,
+    const createdAt = new Date().toISOString();
+    const groupId = activeGroup.id;
+    const localItem: Item = {
+      id: createUuid(),
       name,
       quantity: 1,
-      added_by: currentUser,
+      addedBy: currentUser,
       purchased: false,
-    });
-    if (error) {
-      setNotice('تعذر إضافة الغرض. حاول مرة أخرى.');
-      return;
-    }
+      createdAt,
+      version: 1,
+    };
+    const saved = await applyLocalItemChange(groupId, (currentItems) => ({
+      operation: {
+        id: createUuid(),
+        groupId,
+        actorName: currentUser,
+        type: 'add',
+        itemId: localItem.id,
+        payload: { name, quantity: 1, createdAt },
+        createdAt,
+      },
+      nextItems: [...currentItems, localItem],
+    }));
+    if (!saved) return;
     setNewItem('');
     requestAnimationFrame(() => inputRef.current?.focus());
-    await refreshItems(activeGroup.id);
   };
 
   const changeQuantity = async (id: string, amount: number) => {
-    if (!activeGroup) return;
-    const item = items.find((entry) => entry.id === id);
-    if (!item) return;
-    const { error } = await supabase.from('maqadhi_v2_items').update({ quantity: Math.max(1, item.quantity + amount) }).eq('id', id).eq('group_id', activeGroup.id);
-    if (error) {
-      setNotice('تعذر تعديل الكمية. حاول مرة أخرى.');
-      return;
-    }
-    await refreshItems(activeGroup.id);
+    if (!activeGroup || !currentUser) return;
+    const groupId = activeGroup.id;
+    await applyLocalItemChange(groupId, (currentItems) => {
+      const item = currentItems.find((entry) => entry.id === id);
+      if (!item) return null;
+      const nextQuantity = Math.max(1, item.quantity + amount);
+      const delta = nextQuantity - item.quantity;
+      if (!delta) return null;
+      const createdAt = new Date().toISOString();
+      return {
+        operation: {
+          id: createUuid(),
+          groupId,
+          actorName: currentUser,
+          type: 'quantity_delta',
+          itemId: id,
+          payload: { delta },
+          baseVersion: item.version ?? 0,
+          createdAt,
+        },
+        nextItems: currentItems.map((entry) => entry.id === id
+          ? { ...entry, quantity: nextQuantity, version: (entry.version ?? 0) + 1 }
+          : entry),
+      };
+    });
   };
 
   const togglePurchased = async (id: string) => {
-    if (!activeGroup) return;
-    const item = items.find((entry) => entry.id === id);
-    if (!item) return;
-
-    const nextPurchased = !item.purchased;
-    const nextPurchasedBy = nextPurchased ? currentUser : undefined;
-    const optimisticItems = items.map((entry) => entry.id === id
-      ? { ...entry, purchased: nextPurchased, purchasedBy: nextPurchasedBy }
-      : entry);
-    setItems(optimisticItems);
-    setCachedItems((current) => ({ ...current, [activeGroup.id]: optimisticItems }));
-
-    const { error } = await supabase.from('maqadhi_v2_items').update({
-      purchased: nextPurchased,
-      purchased_by: nextPurchased ? currentUser : null,
-    }).eq('id', id).eq('group_id', activeGroup.id);
-    if (error) {
-      const revertedItems = optimisticItems.map((entry) => entry.id === id
-        ? { ...entry, purchased: item.purchased, purchasedBy: item.purchasedBy }
-        : entry);
-      setItems(revertedItems);
-      setCachedItems((current) => ({ ...current, [activeGroup.id]: revertedItems }));
-      setNotice('تعذر نقل الغرض. حاول مرة أخرى.');
-      return;
-    }
+    if (!activeGroup || !currentUser) return;
+    const groupId = activeGroup.id;
+    await applyLocalItemChange(groupId, (currentItems) => {
+      const item = currentItems.find((entry) => entry.id === id);
+      if (!item) return null;
+      const nextPurchased = !item.purchased;
+      const createdAt = new Date().toISOString();
+      return {
+        operation: {
+          id: createUuid(),
+          groupId,
+          actorName: currentUser,
+          type: 'set_purchased',
+          itemId: id,
+          payload: { purchased: nextPurchased, purchasedBy: currentUser },
+          baseVersion: item.version ?? 0,
+          createdAt,
+        },
+        nextItems: currentItems.map((entry) => entry.id === id
+          ? {
+            ...entry,
+            purchased: nextPurchased,
+            purchasedBy: nextPurchased ? currentUser : undefined,
+            version: (entry.version ?? 0) + 1,
+          }
+          : entry),
+      };
+    });
   };
 
   const removeItem = async (id: string) => {
-    if (!activeGroup) return;
-    const item = items.find((entry) => entry.id === id);
-    if (!item || (activeGroup.manager !== currentUser && item.addedBy !== currentUser)) {
-      setNotice('ليس لديك صلاحية حذف هذا الغرض.');
-      return;
+    if (!activeGroup || !currentUser) return;
+    const groupId = activeGroup.id;
+    const manager = activeGroup.manager;
+    const saved = await applyLocalItemChange(groupId, (currentItems) => {
+      const item = currentItems.find((entry) => entry.id === id);
+      if (!item || !item.purchased || (manager !== currentUser && item.addedBy !== currentUser)) {
+        setNotice('ليس لديك صلاحية حذف هذا الغرض.');
+        return null;
+      }
+      const createdAt = new Date().toISOString();
+      return {
+        operation: {
+          id: createUuid(),
+          groupId,
+          actorName: currentUser,
+          type: 'delete',
+          itemId: id,
+          payload: {},
+          baseVersion: item.version ?? 0,
+          createdAt,
+        },
+        nextItems: currentItems.filter((entry) => entry.id !== id),
+      };
+    });
+    if (saved) {
+      setPersonalOrders((current) => ({
+        ...current,
+        [groupId]: (current[groupId] ?? []).filter((itemId) => itemId !== id),
+      }));
     }
-    const { error } = await supabase.from('maqadhi_v2_items').delete().eq('id', id).eq('group_id', activeGroup.id);
-    if (error) {
-      setNotice('تعذر حذف الغرض. حاول مرة أخرى.');
-      return;
-    }
-    await refreshItems(activeGroup.id);
   };
+
   const saveItemName = async () => {
     const name = editedName.trim();
-    if (!editingId || !name || !activeGroup) return;
-    const { error } = await supabase.from('maqadhi_v2_items').update({ name }).eq('id', editingId).eq('group_id', activeGroup.id);
-    if (error) {
-      setNotice('تعذر تعديل الغرض. حاول مرة أخرى.');
-      return;
-    }
-    setEditingId(null);
-    await refreshItems(activeGroup.id);
+    const itemId = editingId;
+    if (!itemId || !name || !activeGroup || !currentUser) return;
+    const groupId = activeGroup.id;
+    const saved = await applyLocalItemChange(groupId, (currentItems) => {
+      const item = currentItems.find((entry) => entry.id === itemId);
+      if (!item) return null;
+      const createdAt = new Date().toISOString();
+      return {
+        operation: {
+          id: createUuid(),
+          groupId,
+          actorName: currentUser,
+          type: 'rename',
+          itemId,
+          payload: { name },
+          baseVersion: item.version ?? 0,
+          createdAt,
+        },
+        nextItems: currentItems.map((entry) => entry.id === itemId
+          ? { ...entry, name, version: (entry.version ?? 0) + 1 }
+          : entry),
+      };
+    });
+    if (saved) setEditingId(null);
   };
 
   const saveWantedOrder = (orderedItems: Item[]) => {
     if (!activeGroup) return;
     const groupId = activeGroup.id;
-    const orderedWithPurchased = [...orderedItems, ...items.filter((item) => item.purchased)];
-    setItems(orderedWithPurchased);
-    setCachedItems((current) => ({ ...current, [groupId]: orderedWithPurchased }));
-    setPersonalOrders((current) => ({ ...current, [groupId]: orderedItems.map((item) => item.id) }));
+    const task = localItemMutationRef.current.then(async () => {
+      const currentGroupItems = cachedItemsRef.current[groupId] ?? itemsRef.current;
+      const orderedIds = new Set(orderedItems.map((item) => item.id));
+      const currentWantedById = new Map(currentGroupItems.filter((item) => !item.purchased).map((item) => [item.id, item]));
+      const latestOrderedItems = orderedItems
+        .map((item) => currentWantedById.get(item.id))
+        .filter((item): item is Item => Boolean(item));
+      const newlyAddedItems = currentGroupItems.filter((item) => !item.purchased && !orderedIds.has(item.id));
+      const orderedWithPurchased = [
+        ...latestOrderedItems,
+        ...newlyAddedItems,
+        ...currentGroupItems.filter((item) => item.purchased),
+      ];
+      itemsRef.current = orderedWithPurchased;
+      setItems(orderedWithPurchased);
+      cachedItemsRef.current = { ...cachedItemsRef.current, [groupId]: orderedWithPurchased };
+      setCachedItems(cachedItemsRef.current);
+      setPersonalOrders((current) => ({ ...current, [groupId]: [...latestOrderedItems, ...newlyAddedItems].map((item) => item.id) }));
+      await mutateItemQueue((current) => current);
+    });
+    localItemMutationRef.current = task.then(() => undefined, () => undefined);
   };
   const refreshMembers = async (groupId: string) => {
     const { data, error } = await supabase.from('maqadhi_v2_members').select('name, role, status').eq('group_id', groupId);
@@ -528,6 +931,10 @@ export default function MaqadhiHome() {
   const wanted = items.filter((item) => !item.purchased);
   const bought = items.filter((item) => item.purchased);
 
+  if (PHONE_LOGIN_ENABLED && (!authReady || !authenticated)) {
+    return <PhoneLogin onAuthenticated={() => setAuthenticated(true)} />;
+  }
+
   if (!sessionReady) {
     return <View style={styles.welcomeScreen}><Text style={styles.welcomeText}>جار استعادة حسابك...</Text></View>;
   }
@@ -696,6 +1103,8 @@ export default function MaqadhiHome() {
             <Text style={styles.modalTitle}>عن مقاضي</Text>
             <Text style={styles.infoText}>مقاضي يساعد العائلة أو فريق العمل على مشاركة قائمة الاحتياجات ومعرفة ما تم شراؤه.</Text>
             <Text style={styles.infoText}>أضف غرضًا، عدّل الكمية عند الحاجة، واضغط على الغرض عند شرائه لنقله إلى قسم «تم شراؤه».</Text>
+            <Text style={styles.infoLabel}>الخصوصية</Text>
+            <Text style={styles.infoText}>تُحفظ أسماء الأعضاء والمجموعات والأغراض لتقديم خدمة المشاركة والمزامنة، ولا يعرض التطبيق إعلانات ولا يبيع بيانات المستخدمين.</Text>
             <Text style={styles.infoLabel}>للتواصل والاقتراحات</Text>
             <Text style={styles.infoEmail} selectable>uparab2004@gmail.com</Text>
             <TouchableOpacity onPress={() => setInfoVisible(false)}><Text style={styles.closeText}>إغلاق</Text></TouchableOpacity>
