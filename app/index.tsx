@@ -1168,6 +1168,7 @@ export default function MaqadhiHome() {
 function ShoppingRow({ item, currentUser, canManage, onToggle, onLongPress, isDragging, onQuantity, onDelete, editingId, editedName, onEdit, onEditedName, onSave }: { item: Item; currentUser: string; canManage: boolean; onToggle: (id: string) => void; onLongPress?: () => void; isDragging?: boolean; onQuantity: (id: string, amount: number) => void; onDelete: (id: string) => void; editingId: string | null; editedName: string; onEdit: (item: Item) => void; onEditedName: (name: string) => void; onSave: () => void }) {
   const isEditing = editingId === item.id;
   const canEdit = item.addedBy === currentUser;
+  const itemNameSize = item.name.length > 32 ? 14 : item.name.length > 20 ? 15 : 16;
   return (
     <View style={[styles.itemRow, item.purchased && styles.purchasedRow, isDragging && styles.draggingRow]}>
       {isEditing ? (
@@ -1176,8 +1177,8 @@ function ShoppingRow({ item, currentUser, canManage, onToggle, onLongPress, isDr
           <TouchableOpacity style={styles.editButton} onPress={onSave}><Text style={styles.editButtonText}>حفظ</Text></TouchableOpacity>
         </View>
       ) : (
-      <TouchableOpacity style={styles.itemTap} onPress={() => onToggle(item.id)} onLongPress={onLongPress} activeOpacity={0.7}>
-        <Text numberOfLines={1} style={[styles.itemName, item.purchased && styles.purchasedName]}>{item.name}</Text>
+      <TouchableOpacity style={[styles.itemTap, styles.itemTapWide]} onPress={() => onToggle(item.id)} onLongPress={onLongPress} activeOpacity={0.7}>
+        <Text style={[styles.itemName, { fontSize: itemNameSize }, item.purchased && styles.purchasedName]}>{item.name}</Text>
       </TouchableOpacity>
       )}
       <View style={styles.quantity}>
@@ -1185,7 +1186,7 @@ function ShoppingRow({ item, currentUser, canManage, onToggle, onLongPress, isDr
         <Text style={styles.quantityValue}>{item.quantity}</Text>
         <TouchableOpacity style={styles.quantityButton} onPress={() => onQuantity(item.id, -1)}><Minus size={17} color={colors.primary} /></TouchableOpacity>
       </View>
-      {!isEditing && <View style={styles.addedBy}>
+      {!isEditing && <View style={[styles.addedBy, styles.addedByNarrow]}>
         <TouchableOpacity style={styles.addedInfoTap} onPress={() => onToggle(item.id)} onLongPress={onLongPress} activeOpacity={0.7}>
           <Text numberOfLines={1} style={styles.meta}>أضافه: {item.addedBy}</Text>
           {item.purchasedBy && <Text numberOfLines={1} style={styles.meta}>اشتراه: {item.purchasedBy}</Text>}
@@ -1207,4 +1208,5 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', padding: 16 }, sheet: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 11 }, modalTitle: { color: colors.text, fontWeight: '800', fontSize: 21, textAlign: 'center', marginBottom: 6 }, modalInput: { borderWidth: 1, borderColor: '#d9dedb', borderRadius: 12, height: 50, paddingHorizontal: 14, color: colors.text, fontSize: 16 }, actionError: { color: colors.danger, textAlign: 'center', fontSize: 13 }, modalHint: { color: colors.muted, textAlign: 'center', lineHeight: 21 }, groupLink: { color: colors.primary, fontSize: 12, textAlign: 'center', lineHeight: 19, paddingHorizontal: 6 }, infoText: { color: colors.muted, fontSize: 15, textAlign: 'center', lineHeight: 24 }, infoLabel: { color: colors.text, fontWeight: '800', textAlign: 'center', marginTop: 6 }, infoEmail: { color: colors.primary, fontWeight: '800', textAlign: 'center', fontSize: 15 }, shareCodeText: { color: colors.primary, textAlign: 'center', fontWeight: '800', fontSize: 18, letterSpacing: 1.2 }, groupOption: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, activeGroup: { borderColor: colors.primary, backgroundColor: colors.primaryLight }, groupOptionName: { color: colors.text, fontSize: 16, fontWeight: '800' }, groupOptionCode: { color: colors.muted, marginTop: 3, fontSize: 12 }, primaryModalButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: 'center', marginTop: 6 }, primaryModalText: { color: '#fff', fontWeight: '800', fontSize: 16 }, secondaryModalButton: { borderColor: '#d6ded9', borderWidth: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }, secondaryModalText: { color: colors.text, fontWeight: '800', fontSize: 16 }, closeText: { color: colors.muted, textAlign: 'center', fontWeight: '700', paddingTop: 6, paddingBottom: 2 },
   requestRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 13 }, requestName: { color: colors.text, fontWeight: '700', fontSize: 16 }, requestButtons: { flexDirection: 'row', gap: 8 }, acceptButton: { backgroundColor: colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 9 }, acceptText: { color: '#fff', fontWeight: '800' }, rejectButton: { borderColor: '#e3b9b9', borderWidth: 1, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 9 }, rejectText: { color: colors.danger, fontWeight: '800' },
   memberRow: { flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#eef0ef', paddingVertical: 12 }, memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff3dd', alignItems: 'center', justifyContent: 'center' }, memberAvatarText: { color: '#b57814', fontSize: 17, fontWeight: '800' }, memberName: { color: colors.text, fontSize: 16, fontWeight: '700', flex: 1 }, managerBadge: { color: '#a66b17', backgroundColor: '#fff3dd', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 10, fontSize: 12, fontWeight: '800' }, removeMemberButton: { borderWidth: 1, borderColor: '#efc4c4', borderRadius: 7, paddingVertical: 5, paddingHorizontal: 9 }, removeMemberText: { color: colors.danger, fontSize: 12, fontWeight: '800' }, managerChoice: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#d7e5db', borderRadius: 10, padding: 12, gap: 8 }, chooseText: { color: colors.primary, fontWeight: '800', fontSize: 13 }, deleteGroupButton: { backgroundColor: '#fff0f0', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 }, deleteGroupText: { color: colors.danger, fontWeight: '800', fontSize: 15 },
+  itemTapWide: { flex: 1.45 }, addedByNarrow: { flex: 0.9 },
 });
