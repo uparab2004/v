@@ -4,7 +4,9 @@ import { NestableDraggableFlatList, NestableScrollContainer } from 'react-native
 import {
   Alert,
   I18nManager,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   Share,
   StyleSheet,
@@ -983,7 +985,8 @@ export default function MaqadhiHome() {
 
   return (
     <View style={styles.screen}>
-      <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView style={styles.keyboardContainer} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.groupTrigger} onPress={() => setGroupsVisible(true)}>
             <ChevronDown color={colors.text} size={19} />
@@ -1053,6 +1056,7 @@ export default function MaqadhiHome() {
           <ShoppingRow key={item.id} item={item} currentUser={currentUser} canManage={isCurrentUserManager} onToggle={togglePurchased} onQuantity={changeQuantity} onDelete={removeItem} editingId={editingId} editedName={editedName} onEdit={(entry) => { setEditingId(entry.id); setEditedName(entry.name); }} onEditedName={setEditedName} onSave={saveItemName} />
         ))}
       </NestableScrollContainer>
+      </KeyboardAvoidingView>
 
       <Modal visible={groupsVisible} transparent animationType="fade" onRequestClose={() => setGroupsVisible(false)}>
         <Pressable style={styles.overlay} onPress={() => setGroupsVisible(false)}>
@@ -1195,7 +1199,7 @@ function ShoppingRow({ item, currentUser, canManage, onToggle, onLongPress, isDr
 
 const colors = { primary: '#159447', primaryLight: '#edfaf1', text: '#202124', muted: '#65706a', placeholder: '#9aa19d', border: '#e3e7e4', danger: '#ca4848', gray: '#f1f3f2' };
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' }, content: { padding: 20, paddingTop: 30, paddingBottom: 52 }, welcomeScreen: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', padding: 28 }, welcomeContent: { alignItems: 'stretch' }, waitingCard: { alignItems: 'stretch', borderWidth: 1, borderColor: '#dce9e0', borderRadius: 22, padding: 24, backgroundColor: '#fff' }, waitingIcon: { color: colors.primary, fontSize: 54, textAlign: 'center', marginBottom: 6 }, welcomeTitle: { color: colors.text, fontSize: 34, fontWeight: '800', textAlign: 'center' }, welcomeText: { color: colors.muted, textAlign: 'center', fontSize: 16, lineHeight: 25, marginTop: 12, marginBottom: 24 }, waitingText: { color: colors.primary, textAlign: 'center', fontSize: 14, lineHeight: 22, fontWeight: '700' }, welcomePrimary: { height: 58, backgroundColor: colors.primary, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, welcomePrimaryText: { color: '#fff', fontSize: 18, fontWeight: '800' }, welcomeSecondary: { height: 58, borderWidth: 1, borderColor: '#cde5d6', borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 }, welcomeSecondaryText: { color: colors.primary, fontSize: 18, fontWeight: '800' },
+  screen: { flex: 1, backgroundColor: '#fff' }, keyboardContainer: { flex: 1 }, content: { padding: 20, paddingTop: 30, paddingBottom: 52 }, welcomeScreen: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', padding: 28 }, welcomeContent: { alignItems: 'stretch' }, waitingCard: { alignItems: 'stretch', borderWidth: 1, borderColor: '#dce9e0', borderRadius: 22, padding: 24, backgroundColor: '#fff' }, waitingIcon: { color: colors.primary, fontSize: 54, textAlign: 'center', marginBottom: 6 }, welcomeTitle: { color: colors.text, fontSize: 34, fontWeight: '800', textAlign: 'center' }, welcomeText: { color: colors.muted, textAlign: 'center', fontSize: 16, lineHeight: 25, marginTop: 12, marginBottom: 24 }, waitingText: { color: colors.primary, textAlign: 'center', fontSize: 14, lineHeight: 22, fontWeight: '700' }, welcomePrimary: { height: 58, backgroundColor: colors.primary, borderRadius: 15, alignItems: 'center', justifyContent: 'center' }, welcomePrimaryText: { color: '#fff', fontSize: 18, fontWeight: '800' }, welcomeSecondary: { height: 58, borderWidth: 1, borderColor: '#cde5d6', borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 20 }, welcomeSecondaryText: { color: colors.primary, fontSize: 18, fontWeight: '800' },
   topBar: { gap: 14, borderBottomWidth: 1, borderBottomColor: '#eff1ef', paddingBottom: 15 }, groupTrigger: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 7 }, groupOverline: { color: colors.muted, fontSize: 12 }, groupName: { color: colors.text, fontWeight: '800', fontSize: 24 }, topActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }, roundAction: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingHorizontal: 11, paddingVertical: 8, borderRadius: 18, backgroundColor: '#f5f7f6' }, actionText: { color: colors.muted, fontSize: 13, fontWeight: '700' }, requestsAction: { backgroundColor: '#fff1f1' }, requestsText: { color: '#b84a4a', fontWeight: '700', fontSize: 13 }, exitAction: { flexDirection: 'row', gap: 4, alignItems: 'center', paddingHorizontal: 7 }, exitText: { color: colors.danger, fontWeight: '700', fontSize: 13 }, infoAction: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7f6' },
   code: { marginTop: 11, color: colors.primary, fontSize: 14, fontWeight: '700' }, codeValue: { letterSpacing: 1.3 }, notice: { marginTop: 9, color: colors.primary, fontWeight: '700', fontSize: 12, textAlign: 'right' }, addRow: { flexDirection: 'row-reverse', gap: 10, marginTop: 25, alignItems: 'center' }, input: { flex: 1, borderWidth: 1, borderColor: '#d9dedb', borderRadius: 13, height: 48, paddingHorizontal: 15, color: colors.text, fontSize: 16 }, addButton: { height: 48, paddingHorizontal: 22, borderRadius: 13, backgroundColor: colors.primary, justifyContent: 'center' }, addButtonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   shareButton: { marginTop: 12, height: 48, borderRadius: 13, backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: '#c8ecd5', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, shareText: { color: '#207144', fontWeight: '700', fontSize: 15 }, hint: { textAlign: 'center', color: colors.muted, fontSize: 12, marginTop: 13, marginBottom: 21 }, sectionTitle: { color: colors.text, fontSize: 18, fontWeight: '800', marginBottom: 10 },
